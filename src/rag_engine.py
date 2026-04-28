@@ -37,6 +37,7 @@ class RAGEngine:
     
     def _initialize(self):
         """Initialize the RAG engine"""
+        self._song_docs = {}  # always initialized so fallback never raises AttributeError
         if CHROMADB_AVAILABLE:
             try:
                 self.client = chromadb.Client(Settings(

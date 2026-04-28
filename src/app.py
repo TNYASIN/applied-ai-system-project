@@ -316,10 +316,15 @@ def _render_header(accent: str):
 
 def _handle_oauth_callback():
     """If Spotify redirected back with ?code=, exchange it for a token."""
+    # st.query_params added in 1.30; fall back to experimental for 1.28/1.29
     try:
-        params = st.query_params
-    except Exception:
-        return
+        params = dict(st.query_params)
+    except AttributeError:
+        try:
+            params = {k: v[0] for k, v in st.experimental_get_query_params().items()}
+        except Exception:
+            return
+
     if "code" not in params:
         return
 
@@ -329,14 +334,18 @@ def _handle_oauth_callback():
     redirect_uri  = os.environ.get("SPOTIFY_REDIRECT_URI", "")
 
     if not (client_id and client_secret):
-        st.error("Spotify credentials not configured. See README.")
+        st.error("Spotify credentials not configured — see README.")
         return
 
     try:
-        if not st.session_state.spotify_client or st.session_state.spotify_client.is_demo():
-            st.session_state.spotify_client = SpotifyClient(client_id, client_secret, redirect_uri)
-        st.session_state.spotify_client.exchange_code_for_token(code)
-        st.query_params.clear()
+        client = SpotifyClient(client_id, client_secret, redirect_uri)
+        client.exchange_code_for_token(code)
+        st.session_state.spotify_client = client  # only stored after successful exchange
+        # Clear the ?code= from the URL
+        try:
+            st.query_params.clear()
+        except Exception:
+            st.experimental_set_query_params()
         st.rerun()
     except Exception as e:
         st.error(f"Spotify authorization failed: {e}")
@@ -381,7 +390,8 @@ def main():
             value=bool(st.session_state.theme_colors),
             help="Shift the background palette from your top album art",
         )
-        if vibes_on and not st.session_state.spotify_client:
+        _client = st.session_state.spotify_client
+        if vibes_on and not (_client and (_client.is_demo() or _client.access_token)):
             st.caption("Connect Spotify first to use Vibes mode.")
             vibes_on = False
         if not vibes_on:
@@ -394,7 +404,7 @@ def main():
 
         st.markdown("---")
         client = st.session_state.spotify_client
-        if client and not client.is_demo():
+        if client and not client.is_demo() and client.access_token:
             st.caption("🟢 Spotify connected")
             st.markdown("**Listening history**")
             spotify_limit = st.select_slider(
@@ -485,9 +495,7 @@ def _page_connect():
     with col1:
         if client_id and client_secret:
             try:
-                client = SpotifyClient(client_id, client_secret, redirect_uri)
-                auth_url = client.get_auth_url()
-                st.session_state.spotify_client = client
+                auth_url = SpotifyClient(client_id, client_secret, redirect_uri).get_auth_url()
                 st.link_button("🔗 Connect to Spotify", auth_url, type="primary")
             except Exception as e:
                 st.error(f"Error building auth URL: {e}")
