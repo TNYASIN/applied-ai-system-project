@@ -475,6 +475,7 @@ def main():
     # Top navigation tabs
     tabs = st.tabs([
         "🏠 Home",
+        "🎧 Your Music",
         "🔗 Connect Spotify",
         "🎼 Recommendations",
         "✍️ Writer Credits",
@@ -483,12 +484,14 @@ def main():
     with tabs[0]:
         _page_home(recommender, data_manager)
     with tabs[1]:
-        _page_connect()
+        _page_your_music()
     with tabs[2]:
-        _page_recommendations(recommender, rag_engine)
+        _page_connect()
     with tabs[3]:
-        _page_writers(recommender, data_manager)
+        _page_recommendations(recommender, rag_engine)
     with tabs[4]:
+        _page_writers(recommender, data_manager)
+    with tabs[5]:
         _page_analytics(recommender, rag_engine, data_manager)
 
 
@@ -519,6 +522,59 @@ listening history, favorite songwriters, and taste profile.
             st.session_state.demo_mode = True
             st.session_state.spotify_client = SpotifyClient.demo_mode()
             st.rerun()
+
+
+# ─── Page: Your Music (Spotify Listening History) ───────────────────────────
+def _page_your_music():
+    client = st.session_state.spotify_client
+    
+    if not client or client.is_demo():
+        st.info("🎧 Connect Spotify to see your listening history here.")
+        return
+    
+    st.header("🎧 Your Music")
+    st.markdown("Your actual listening history from Spotify.")
+    st.markdown("---")
+    
+    try:
+        # Get user's top tracks
+        limit = st.session_state.get("spotify_limit", 10)
+        time_range = st.session_state.get("spotify_range", "medium_term")
+        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
+        
+        if not tracks:
+            st.info("No top tracks found. Play more music on Spotify!")
+            return
+        
+        st.markdown("### Your Top Tracks")
+        for i, track in enumerate(tracks, 1):
+            # Track is returned directly from Spotify API
+            name = track.get("name", "Unknown")
+            artists = ", ".join([a.get("name", "") for a in track.get("artists", [])])
+            album = track.get("album", {}).get("name", "Unknown")
+            duration_ms = track.get("duration_ms", 0)
+            duration_min = duration_ms // 60000
+            duration_sec = (duration_ms % 60000) // 1000
+            
+            with st.container():
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.markdown(f"**{i}. {name}**")
+                    st.markdown(f"🎤 {artists}  ·  📀 {album}")
+                with c2:
+                    st.caption(f"{duration_min}:{duration_sec:02d}")
+                st.divider()
+        
+        # Get recently played
+        st.markdown("### Recently Played")
+        recent = client.get_recently_played(limit=10)
+        for track in recent:
+            name = track.get("track", {}).get("name", "Unknown")
+            artists = ", ".join([a.get("name", "") for a in track.get("track", {}).get("artists", [])])
+            st.caption(f"🎵 {name} — {artists}")
+            
+    except Exception as e:
+        st.error(f"Error loading your music: {e}")
 
 
 # ─── Page: Connect Spotify ────────────────────────────────────────────────────
