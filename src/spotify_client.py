@@ -113,7 +113,7 @@ class SpotifyClient:
     
     def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Make authenticated API request"""
-        if self._demo_data:
+        if getattr(self, '_demo_data', False):
             return self._get_demo_response(endpoint)
             
         if not self.access_token:
