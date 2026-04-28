@@ -102,18 +102,42 @@ def _load_spotify_palette() -> Optional[List[str]]:
         tracks = client.get_top_tracks(limit=5)
         colors: List[str] = []
         for t in tracks[:3]:
-            track = t.get("track", t)
+            # Spotify API returns track directly, not wrapped in "track" key
+            track = t if isinstance(t, dict) and "album" in t else t.get("track", t)
             images = track.get("album", {}).get("images", [])
             if images:
-                c = _extract_colors(images[-1]["url"], n=2)
+                c = _extract_colors(images[0]["url"], n=2)  # Use first image (largest)
                 if c:
                     colors.extend(c)
         if colors:
             st.session_state.theme_colors = colors[:4]
             return colors[:4]
-    except Exception:
-        pass
+    except Exception as e:
+        st.session_state.theme_colors = None
     return None
+
+
+def get_spotify_writers() -> List[str]:
+    """Extract artists from user's top tracks to use as writer credits."""
+    client = st.session_state.spotify_client
+    if client is None or client.is_demo():
+        return []
+    
+    try:
+        limit = st.session_state.get("spotify_limit", 10)
+        time_range = st.session_state.get("spotify_range", "medium_term")
+        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
+        
+        writers = set()
+        for t in tracks:
+            # Spotify API returns track directly
+            track = t if isinstance(t, dict) and "artists" in t else t.get("track", t)
+            for artist in track.get("artists", []):
+                writers.add(artist.get("name", ""))
+        
+        return list(writers)
+    except Exception:
+        return []
 
 
 # ─── CSS / theme ──────────────────────────────────────────────────────────────
@@ -532,6 +556,17 @@ def _page_recommendations(recommender, rag_engine):
     st.header("🎼 Get Recommendations")
     st.markdown("### Tune Parameters")
 
+    # Get writers from Spotify if connected, otherwise use data manager writers
+    spotify_writers = get_spotify_writers()
+    available_writers = recommender.get_available_writers()
+    
+    # Combine Spotify writers with data manager writers, prioritizing Spotify ones
+    if spotify_writers:
+        # Add Spotify artists that aren't already in the list
+        for w in spotify_writers:
+            if w and w not in available_writers:
+                available_writers.append(w)
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         genre = st.selectbox(
@@ -546,7 +581,8 @@ def _page_recommendations(recommender, rag_engine):
     with col3:
         energy = st.slider("Energy Level", 0.0, 1.0, 0.5, 0.05)
     with col4:
-        target_writers = st.multiselect("Preferred Writers", recommender.get_available_writers())
+        label = "Preferred Artists (from Spotify)" if spotify_writers else "Preferred Writers"
+        target_writers = st.multiselect(label, available_writers)
 
     with st.expander("🔍 Advanced Filters"):
         c1, c2, c3, c4 = st.columns(4)
@@ -600,6 +636,16 @@ def _page_recommendations(recommender, rag_engine):
 def _page_writers(recommender, data_manager):
     st.header("✍️ Writer & Composer Credits")
     st.markdown("Explore the songwriters behind your music. Get recommendations by writer.")
+
+    # Show Spotify artists if connected
+    spotify_writers = get_spotify_writers()
+    if spotify_writers:
+        st.markdown("### 🎧 Your Top Artists (from Spotify)")
+        cols = st.columns(4)
+        for i, artist in enumerate(spotify_writers[:12]):
+            with cols[i % 4]:
+                st.markdown(f"**{artist}**")
+        st.markdown("---")
 
     writer_stats = recommender.get_writer_statistics()
     if writer_stats.empty:
