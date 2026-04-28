@@ -29,6 +29,8 @@ for _k, _v in {
     'demo_mode': False,
     'theme_colors': None,
     'last_recommendations': [],
+    'spotify_injected': False,
+    'recommender': None,
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -116,28 +118,6 @@ def _load_spotify_palette() -> Optional[List[str]]:
         st.session_state.theme_colors = None
     return None
 
-
-def get_spotify_writers() -> List[str]:
-    """Extract artists from user's top tracks to use as writer credits."""
-    client = st.session_state.spotify_client
-    if client is None or client.is_demo():
-        return []
-    
-    try:
-        limit = st.session_state.get("spotify_limit", 10)
-        time_range = st.session_state.get("spotify_range", "medium_term")
-        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
-        
-        writers = set()
-        for t in tracks:
-            # Spotify API returns track directly
-            track = t if isinstance(t, dict) and "artists" in t else t.get("track", t)
-            for artist in track.get("artists", []):
-                writers.add(artist.get("name", ""))
-        
-        return list(writers)
-    except Exception:
-        return []
 
 
 # ─── CSS / theme ──────────────────────────────────────────────────────────────
@@ -381,7 +361,10 @@ def _handle_oauth_callback():
     try:
         client = SpotifyClient(client_id, client_secret, redirect_uri)
         client.exchange_code_for_token(code)
-        st.session_state.spotify_client = client  # only stored after successful exchange
+        st.session_state.spotify_client = client
+        # Reset per-session recommender so Spotify tracks get injected fresh
+        st.session_state.recommender = None
+        st.session_state.spotify_injected = False
         # Clear the ?code= from the URL
         try:
             st.query_params.clear()
@@ -413,15 +396,109 @@ def _patch_sidebar_tooltip():
 
 # ─── Services ─────────────────────────────────────────────────────────────────
 @st.cache_resource
-def _init_services():
+def _init_base_services():
     dm = DataManager()
-    return MusicRecommender(dm), RAGEngine(), dm
+    return RAGEngine(), dm
+
+
+def _get_recommender(dm) -> MusicRecommender:
+    """Per-session recommender so Spotify data stays user-specific."""
+    if "recommender" not in st.session_state:
+        st.session_state.recommender = MusicRecommender(dm)
+    return st.session_state.recommender
+
+
+_SPOTIFY_GENRE_MAP = {
+    "pop": "Pop", "dance pop": "Pop", "teen pop": "Pop", "synth-pop": "Pop",
+    "rock": "Rock", "alternative rock": "Rock", "hard rock": "Rock", "classic rock": "Rock",
+    "hip hop": "Hip-Hop", "rap": "Hip-Hop", "trap": "Hip-Hop", "hip-hop": "Hip-Hop",
+    "r&b": "R&B", "soul": "R&B", "neo soul": "R&B", "rhythm and blues": "R&B",
+    "electronic": "Electronic", "edm": "Electronic", "house": "Electronic",
+    "techno": "Electronic", "ambient": "Electronic",
+    "folk": "Folk", "singer-songwriter": "Folk", "acoustic": "Folk",
+    "country": "Country",
+    "jazz": "Jazz", "bossa nova": "Jazz",
+    "classical": "Classical", "orchestra": "Classical",
+    "indie": "Indie", "indie pop": "Indie", "indie rock": "Indie",
+    "metal": "Metal", "heavy metal": "Metal", "death metal": "Metal",
+}
+
+
+def _map_spotify_genre(genre_list: list) -> str:
+    for g in genre_list:
+        g_lower = g.lower()
+        for key, val in _SPOTIFY_GENRE_MAP.items():
+            if key in g_lower:
+                return val
+    return "Pop"
+
+
+def _enrich_recommender_with_spotify(client, recommender: MusicRecommender):
+    """Fetch user's Spotify top tracks and inject them into the recommender catalog."""
+    if st.session_state.get("spotify_injected"):
+        return
+
+    limit = st.session_state.get("spotify_limit", 10)
+    time_range = st.session_state.get("spotify_range", "medium_term")
+
+    try:
+        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
+
+        # Collect unique artist IDs for genre lookup
+        artist_ids = []
+        for track in tracks:
+            for artist in track.get("artists", []):
+                aid = artist.get("id")
+                if aid and aid not in artist_ids:
+                    artist_ids.append(aid)
+
+        # Batch-fetch artist genres (Spotify allows up to 50 per call)
+        genre_lookup: dict = {}
+        for i in range(0, len(artist_ids), 50):
+            try:
+                artists_data = client.get_artists(artist_ids[i:i + 50])
+                for a in artists_data:
+                    genre_lookup[a["id"]] = a.get("genres", [])
+            except Exception:
+                pass
+
+        songs_to_inject = []
+        for track in tracks:
+            title = track.get("name", "Unknown")
+            primary = track.get("artists", [{}])[0]
+            artist_name = primary.get("name", "Unknown")
+            artist_id = primary.get("id", "")
+            genre = _map_spotify_genre(genre_lookup.get(artist_id, []))
+            songs_to_inject.append({
+                "title": title,
+                "artist": artist_name,
+                "genre": genre,
+                "mood": "Energetic",
+                "energy": 0.65,
+                "tempo_bpm": 120,
+                "valence": 0.6,
+                "danceability": 0.6,
+                "acousticness": 0.3,
+                "writer": artist_name,
+            })
+
+        recommender.inject_tracks(songs_to_inject)
+        st.session_state.spotify_injected = True
+        st.session_state.spotify_injected_count = len(songs_to_inject)
+    except Exception as e:
+        st.session_state.spotify_injected = False
 
 
 # ─── App entry ────────────────────────────────────────────────────────────────
 def main():
     _handle_oauth_callback()
-    recommender, rag_engine, data_manager = _init_services()
+    rag_engine, data_manager = _init_base_services()
+    recommender = _get_recommender(data_manager)
+
+    # Inject real Spotify tracks into this session's recommender once connected
+    client = st.session_state.spotify_client
+    if client and not client.is_demo() and client.access_token:
+        _enrich_recommender_with_spotify(client, recommender)
 
     # Sidebar: theme + connection status
     with st.sidebar:
@@ -612,16 +689,8 @@ def _page_recommendations(recommender, rag_engine):
     st.header("🎼 Get Recommendations")
     st.markdown("### Tune Parameters")
 
-    # Get writers from Spotify if connected, otherwise use data manager writers
-    spotify_writers = get_spotify_writers()
     available_writers = recommender.get_available_writers()
-    
-    # Combine Spotify writers with data manager writers, prioritizing Spotify ones
-    if spotify_writers:
-        # Add Spotify artists that aren't already in the list
-        for w in spotify_writers:
-            if w and w not in available_writers:
-                available_writers.append(w)
+    spotify_connected = bool(st.session_state.get("spotify_injected"))
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -637,7 +706,7 @@ def _page_recommendations(recommender, rag_engine):
     with col3:
         energy = st.slider("Energy Level", 0.0, 1.0, 0.5, 0.05)
     with col4:
-        label = "Preferred Artists (from Spotify)" if spotify_writers else "Preferred Writers"
+        label = "Preferred Artists" if spotify_connected else "Preferred Writers"
         target_writers = st.multiselect(label, available_writers)
 
     with st.expander("🔍 Advanced Filters"):
@@ -691,22 +760,17 @@ def _page_recommendations(recommender, rag_engine):
 # ─── Page: Writer Credits ─────────────────────────────────────────────────────
 def _page_writers(recommender, data_manager):
     st.header("✍️ Writer & Composer Credits")
-    st.markdown("Explore the songwriters behind your music. Get recommendations by writer.")
-
-    # Show Spotify artists if connected
-    spotify_writers = get_spotify_writers()
-    if spotify_writers:
-        st.markdown("### 🎧 Your Top Artists (from Spotify)")
-        cols = st.columns(4)
-        for i, artist in enumerate(spotify_writers[:12]):
-            with cols[i % 4]:
-                st.markdown(f"**{artist}**")
-        st.markdown("---")
+    st.markdown("Explore the songwriters behind your music.")
 
     writer_stats = recommender.get_writer_statistics()
     if writer_stats.empty:
         st.info("Connect Spotify or use demo mode to see writer statistics.")
         return
+
+    client = st.session_state.spotify_client
+    spotify_connected = client and not client.is_demo() and client.access_token
+    if spotify_connected and st.session_state.get("spotify_injected"):
+        st.caption(f"Showing writers from your Spotify listening history + catalog ({st.session_state.get('spotify_injected_count', 0)} tracks loaded)")
 
     st.markdown("### 🏆 Top Writers")
     top = writer_stats.head(10)
@@ -738,7 +802,7 @@ def _page_writers(recommender, data_manager):
     if selected_writer:
         writer_songs = recommender.recommend_by_writer(selected_writer)
         if writer_songs:
-            st.markdown(f"**Songs written by {selected_writer}:**")
+            st.markdown(f"**Songs by {selected_writer}:**")
             for s in writer_songs:
                 st.markdown(f"- **{s['title']}** — {s.get('artist', 'Unknown')}  ·  {s.get('genre', '')}")
         else:

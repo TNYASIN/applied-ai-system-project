@@ -220,6 +220,24 @@ class MusicRecommender:
         
         return min(1.0, confidence)
     
+    def inject_tracks(self, tracks: List[Dict]):
+        """Add external tracks (e.g. from Spotify) into the song pool without duplicates."""
+        if not tracks:
+            return
+        new_df = pd.DataFrame(tracks)
+        for col, default in [
+            ("mood", "Energetic"), ("energy", 0.65),
+            ("tempo_bpm", 120), ("valence", 0.6),
+            ("danceability", 0.6), ("acousticness", 0.3),
+        ]:
+            if col not in new_df.columns:
+                new_df[col] = default
+        existing = set(self.songs["title"].str.lower())
+        new_df = new_df[~new_df["title"].str.lower().isin(existing)]
+        if not new_df.empty:
+            self.songs = pd.concat([self.songs, new_df], ignore_index=True)
+            self._build_writer_index()
+
     def recommend_by_writer(self, writer: str, num_results: int = 10) -> List[Dict]:
         """Get recommendations specifically from a writer"""
         if writer not in self.writer_to_songs:
