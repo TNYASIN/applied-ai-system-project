@@ -1,62 +1,6 @@
-# MelodyMind - Applied AI System Project
+# Muze — Music Discovery & Recommendation
 
-## Project Overview
-
-This project extends the **Music Recommender Simulation** from Module 3 into a full-stack AI-powered music recommendation system. The original project was a simple content-based filtering recommender that scored songs based on user preferences.
-
-### Original Project (Module 3)
-- **Name**: Music Recommender Simulation
-- **Summary**: A content-based filtering system that scores songs based on genre, mood, and energy preferences using weighted scoring logic.
-- **Key Features**: Song catalog with audio features, user profile matching, weighted scoring algorithm.
-
-### Extended System (This Project)
-MelodyMind transforms the simulation into a complete applied AI system with:
-
-1. **Web Application** - Streamlit-based UI for interactive recommendations
-2. **Spotify Integration** - OAuth authentication to access real user data
-3. **Writer/Composer Credits** - Track most listened songwriters
-4. **Parameter Tuning** - Fine-tune recommendations with sliders
-5. **RAG Engine** - Retrieval-Augmented Generation for song context
-6. **Test Harness** - Automated reliability testing
-
----
-
-## System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        MelodyMind App                           │
-│                    (Streamlit Web Interface)                    │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-        ▼                  ▼                  ▼
-┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-│   Spotify     │  │  Recommender  │  │    RAG        │
-│   Client      │  │    Engine     │  │    Engine     │
-│  (OAuth/API)  │  │ (Scoring/ML)  │  │ (Vector Store)│
-└───────┬───────┘  └───────┬───────┘  └───────┬───────┘
-        │                  │                  │
-        └──────────────────┼──────────────────┘
-                           │
-                           ▼
-                ┌─────────────────────┐
-                │    Data Manager    │
-                │  (Songs/Writers)   │
-                └─────────────────────┘
-```
-
-### Components
-
-| Component | Description |
-|-----------|-------------|
-| **app.py** | Main Streamlit application with UI |
-| **spotify_client.py** | Spotify OAuth and API integration |
-| **recommender.py** | Enhanced scoring engine with writer tracking |
-| **data_manager.py** | Song catalog and writer data management |
-| **rag_engine.py** | Retrieval-Augmented Generation for context |
-| **test_harness.py** | Reliability testing and evaluation |
+A Streamlit-based music recommendation app with Spotify integration, songwriter credits, and contextual song insights.
 
 ---
 
@@ -65,44 +9,137 @@ MelodyMind transforms the simulation into a complete applied AI system with:
 ### Prerequisites
 
 - Python 3.8+
-- Spotify Developer Account (for OAuth)
+- A Spotify Developer account (free) — only needed for real listening data; the app runs in demo mode without it
 
 ### Installation
 
-1. **Clone and navigate to the project**:
-   ```bash
-   cd applied-ai-system-project
-   ```
-
-2. **Create a virtual environment** (recommended):
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Mac/Linux
-   # or: .venv\Scripts\activate  # Windows
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Spotify OAuth Setup
-
-1. Go to [developer.spotify.com](https://developer.spotify.com/dashboard)
-2. Create a new app
-3. Add `http://localhost:8501/callback` as a redirect URI
-4. Copy your Client ID and Client Secret
-
-### Running the Application
-
 ```bash
+cd applied-ai-system-project
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 cd src
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`
+---
 
-### Running Tests
+## Spotify Setup
+
+### 1. Deploy to Streamlit Cloud
+
+1. Push this repo to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io), connect your repo, and set the main file to `src/app.py`
+3. Your app URL will be something like `https://yourname-muze.streamlit.app` — note it down
+
+### 2. Create a Spotify App
+
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in
+2. Click **Create app**, fill in any name and description
+3. Under **Redirect URIs**, add your Streamlit Cloud URL with `/callback`:
+   ```
+   https://yourname-muze.streamlit.app/callback
+   ```
+4. Save and copy your **Client ID** and **Client Secret**
+
+### 3. Add Secrets on Streamlit Cloud
+
+In your app's Streamlit Cloud dashboard go to **Settings → Secrets** and add:
+
+```toml
+SPOTIFY_CLIENT_ID = "your_client_id_here"
+SPOTIFY_CLIENT_SECRET = "your_client_secret_here"
+SPOTIFY_REDIRECT_URI = "https://yourname-muze.streamlit.app/callback"
+```
+
+Streamlit Cloud encrypts these — they are never exposed in the UI or source code.
+
+### 4. Authorize in the App
+
+Open the **Connect Spotify** tab and click **Connect to Spotify**. You'll be redirected to Spotify's authorization page — after approving, the app handles the token exchange automatically.
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Spotify Integration** | Connects via OAuth to pull your real top tracks and listening history |
+| **Recommendations** | Content-based filtering by genre, mood, energy, tempo, danceability, and more |
+| **Writer Credits** | Browse the songwriters behind your most-played tracks |
+| **Song Insights** | RAG-powered contextual info on recommended songs |
+| **Spotify Vibes** | Extracts dominant colors from your top album art and tints the UI palette |
+| **Analytics** | Reliability tests and confidence scoring for the recommendation engine |
+| **Demo Mode** | Full app experience with sample data — no Spotify account needed |
+
+---
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                     Muze App                        │
+│               (Streamlit Web Interface)             │
+└──────────────────────┬──────────────────────────────┘
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+        ▼              ▼              ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│  Spotify    │ │ Recommender │ │     RAG     │
+│  Client     │ │   Engine    │ │   Engine    │
+│ (OAuth/API) │ │ (Scoring)   │ │  (Context)  │
+└──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+       │               │               │
+       └───────────────┼───────────────┘
+                       ▼
+              ┌─────────────────┐
+              │  Data Manager   │
+              │ (Songs/Writers) │
+              └─────────────────┘
+```
+
+### Components
+
+| File | Role |
+|------|------|
+| `app.py` | Streamlit UI, theming, navigation |
+| `spotify_client.py` | OAuth flow and Spotify Web API calls |
+| `recommender.py` | Weighted scoring engine with writer tracking |
+| `data_manager.py` | Song catalog and writer data |
+| `rag_engine.py` | Retrieval-Augmented Generation for song context |
+| `test_harness.py` | Automated reliability tests |
+
+---
+
+## Scoring Algorithm
+
+Extends the Module 3 weighted scoring system:
+
+| Signal | Weight |
+|--------|--------|
+| Genre match | +2.0 |
+| Mood match | +1.0 |
+| Energy closeness | `(1 − gap) × 1.5` |
+| Writer match | +1.5 |
+| Tempo match | `(1 − gap) × 0.5` |
+| Danceability match | `(1 − gap) × 0.5` |
+| Valence match | `(1 − gap) × 0.5` |
+| Acoustic bonus | +0.5 |
+
+---
+
+## Design Decisions
+
+- **Env-var credentials** — Spotify keys never appear in the UI, reducing the risk of accidental exposure
+- **Demo mode** — allows testing all features without a Spotify account
+- **Spotify Vibes** — album art colors are darkened via Pillow quantization then lightened to pastels for the background gradient
+- **Fallback RAG** — in-memory store used when ChromaDB is unavailable
+- **Confidence scoring** — heuristic based on data completeness (genre, mood, audio features, writer info)
+
+---
+
+## Running Tests
 
 ```bash
 cd src
@@ -111,155 +148,30 @@ python test_harness.py
 
 ---
 
-## Sample Interactions
-
-### Example 1: Basic Recommendation
-**Input**:
-- Genre: Pop
-- Mood: Happy
-- Energy: 0.6
-
-**Output**:
-```
-🎵 Get Recommendations
-
-1. Come Here (Alexi Laiho) - Score: 3.0
-   Reason: Matches Pop genre, Happy mood
-
-2. These Days (Foo Fighters) - Score: 2.5
-   Reason: Matches Pop genre
-
-3. Country Roads (John Denver) - Score: 2.0
-   Reason: Similar energy level
-```
-
-### Example 2: Writer-Based Recommendation
-**Input**:
-- Preferred Writer: Dave Grohl
-
-**Output**:
-```
-🎵 Recommendations by Dave Grohl
-
-1. These Days (Foo Fighters) - Rock, Energetic
-2. Everlong (Foo Fighters) - Rock, Intense
-3. My Hero (Foo Fighters) - Rock, Happy
-```
-
-### Example 3: Parameter Tuning
-**Input**:
-- Genre: Electronic
-- Energy: 0.85
-- Danceability: 0.9
-- Valence: 0.8
-
-**Output**:
-```
-🎵 High-Energy Electronic Recommendations
-
-1. Electric Dreams (Synthwave Master) - Score: 3.5
-2. Neon Nights (Cyber Punk) - Score: 3.2
-```
-
----
-
-## Design Decisions
-
-### Why Streamlit?
-- Rapid prototyping for AI applications
-- Built-in support for interactive widgets
-- Easy deployment and sharing
-
-### Why ChromaDB for RAG?
-- Lightweight vector database
-- Easy integration with Python
-- Supports semantic search
-
-### Scoring Algorithm
-The scoring system extends the Module 3 weights:
-- Genre match: +2.0
-- Mood match: +1.0
-- Energy closeness: (1 - gap) × 1.5
-- Writer match: +1.5 (new)
-- Acoustic bonus: +0.5
-
-### Trade-offs
-- **Demo Mode**: Added to allow testing without Spotify credentials
-- **Fallback RAG**: Simple in-memory storage when ChromaDB unavailable
-- **Confidence Scoring**: Implemented as a heuristic based on data completeness
-
----
-
-## Testing Summary
-
-### Test Results
-- ✅ Consistency Test: Same inputs produce same outputs
-- ✅ Confidence Scoring: Valid scores in 0-1 range
-- ✅ Error Handling: Proper validation of inputs
-- ✅ Parameter Sensitivity: Different params → different results
-- ✅ RAG Functionality: Context retrieval working
-- ✅ Writer Tracking: Statistics available
-
-**Pass Rate: 100%**
-
-### Reliability Observations
-- The recommender is highly consistent across repeated calls
-- Confidence scores correlate with data completeness
-- Parameter tuning produces meaningful result variations
-
----
-
 ## Reflection
 
 ### What I Learned
-1. **AI System Design**: Building a complete system requires thinking about data flow, user experience, and error handling
-2. **Spotify API**: OAuth authentication adds complexity but enables powerful personalization
-3. **RAG Systems**: Retrieval-augmented generation provides valuable context beyond simple recommendations
+1. **OAuth flows in web apps** — handling redirect URIs, code exchange, and token expiry
+2. **RAG architecture** — combining vector retrieval with generative context
+3. **Streamlit theming** — CSS injection, font loading, and the limits of overriding Streamlit's own styles
 
 ### Limitations
-- Demo mode uses limited sample data
-- RAG without embeddings is a simplified implementation
-- Writer data is limited to the catalog
-
-### Potential Misuse
-- Could be used to manipulate listening patterns
-- Could surface inappropriate content if not properly filtered
-- **Mitigation**: Add content filtering, show confidence scores
-
-### Collaboration with AI
-- **Helpful**: AI suggested the RAG architecture and test harness structure
-- **Flawed**: Initial Spotify token handling needed correction for edge cases
+- Demo catalog is small; real recommendations improve significantly with Spotify data
+- RAG context is template-based without a live LLM; integrating Claude/OpenAI would enrich insights
+- Writer data for demo songs is manually mapped
 
 ---
 
-## Optional Stretch Features Completed
+## Optional Stretch Features
 
-| Feature | Status | Description |
-|---------|--------|-------------|
-| RAG Enhancement | ✅ +2pts | Vector-based song context retrieval |
-| Test Harness | ✅ +2pts | Automated evaluation script |
-| Writer Tracking | ✅ +1pt | Writer/composer credits system |
-| Parameter Tuning | ✅ +1pt | Interactive parameter sliders |
-
----
-
-## Portfolio Entry
-
-This project demonstrates my ability to:
-- Extend a prototype into a production-ready system
-- Integrate external APIs (Spotify)
-- Implement AI features (RAG, confidence scoring)
-- Build comprehensive testing infrastructure
-- Document and explain technical decisions
-
-**Link to GitHub**: [https://github.com/TNYASIN/applied-ai-system-project](https://github.com/TNYASIN/applied-ai-system-project)
+| Feature | Status |
+|---------|--------|
+| RAG Enhancement | ✅ |
+| Test Harness | ✅ |
+| Writer / Composer Credits | ✅ |
+| Parameter Tuning | ✅ |
+| Spotify Vibes (dynamic theming) | ✅ |
 
 ---
 
-## Video Walkthrough
-
-[Loom Video Link] - See the end-to-end system running with:
-- Spotify connection flow
-- Parameter-based recommendations
-- Writer credits tracking
-- Reliability testing demonstration
+**GitHub:** [https://github.com/TNYASIN/applied-ai-system-project](https://github.com/TNYASIN/applied-ai-system-project)

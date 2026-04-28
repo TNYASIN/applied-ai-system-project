@@ -1,0 +1,17 @@
+[server]
+headless = true
+
+[theme]
+base = "dark"
+primaryColor = "#1db954"
+backgroundColor = "#0b1018"
+secondaryBackgroundColor = "#0b1018"
+textColor = "#f0ece8"
+font = "sans serif"
+
+[runner]
+magicEnabled = true
+
+[client]
+showToolbar = true
+enableCORS = false
