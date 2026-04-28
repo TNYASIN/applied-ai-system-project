@@ -269,6 +269,23 @@ div.stButton > button:not([kind="primary"]):hover {{
 
 hr {{ border-color: rgba(0,0,0,0.09); }}
 
+/* Expanders */
+details[data-testid="stExpander"] {{
+    background: rgba(255,255,255,0.45) !important;
+    border: 1px solid rgba(0,0,0,0.08) !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+}}
+[data-testid="stExpanderDetails"] {{
+    background: rgba(255,255,255,0.30) !important;
+}}
+details[data-testid="stExpander"] summary,
+details[data-testid="stExpander"] summary p,
+details[data-testid="stExpander"] summary span {{
+    color: {txt} !important;
+    font-family: 'Outfit', sans-serif !important;
+}}
+
 /* Logo */
 .muze-header {{
     display: flex;
@@ -604,22 +621,26 @@ def _page_writers(recommender, data_manager):
     )
     st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("### 📝 Writer Details")
+    st.markdown("### 📝 Writers")
     for _, row in top.iterrows():
         with st.expander(f"✍️ {row['writer']}  —  {row['count']} songs"):
-            c1, c2 = st.columns(2)
-            with c1:
-                st.metric("Songs in Catalog", row["count"])
-            with c2:
-                if st.button(f"Recommend by {row['writer']}", key=f"rec_{row['writer']}"):
-                    st.session_state.target_writers = [row["writer"]]
+            songs = row.get("songs", [])
+            if songs:
+                for title in songs:
+                    st.markdown(f"- {title}")
 
-    st.markdown("### 🎯 Discover by Writer")
-    selected = st.selectbox("Select Writer", writer_stats["writer"].tolist())
-    if st.button(f"Get tracks by {selected}"):
-        results = recommender.recommend({"target_writers": [selected], "energy": 0.5}, 10)
-        for song in results:
-            st.markdown(f"- **{song['title']}** — {song['artist']}")
+    st.markdown("---")
+    st.markdown("### 🔍 Discover by Writer")
+    all_writers = sorted(writer_stats["writer"].tolist())
+    selected_writer = st.selectbox("Choose a writer", all_writers)
+    if selected_writer:
+        writer_songs = recommender.recommend_by_writer(selected_writer)
+        if writer_songs:
+            st.markdown(f"**Songs written by {selected_writer}:**")
+            for s in writer_songs:
+                st.markdown(f"- **{s['title']}** — {s.get('artist', 'Unknown')}  ·  {s.get('genre', '')}")
+        else:
+            st.info("No songs found for this writer in the catalog.")
 
 
 # ─── Page: Analytics ──────────────────────────────────────────────────────────
