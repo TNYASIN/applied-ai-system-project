@@ -1,0 +1,83 @@
+{
+  "timestamp": "2026-04-28T01:01:45.202050",
+  "tests": {
+    "consistency": {
+      "passed": true,
+      "message": "Consistent results: True",
+      "details": {
+        "run_1": [
+          "Sunrise City",
+          "Gym Hero",
+          "Strangers",
+          "Midnight Coding",
+          "Focus Flow"
+        ],
+        "run_2": [
+          "Sunrise City",
+          "Gym Hero",
+          "Strangers",
+          "Midnight Coding",
+          "Focus Flow"
+        ]
+      }
+    },
+    "confidence": {
+      "passed": true,
+      "message": "Known song confidence: 1.00, Unknown: 0.00",
+      "details": {
+        "known_song_confidence": 1.0,
+        "unknown_song_confidence": 0.0
+      }
+    },
+    "error_handling": {
+      "passed": true,
+      "message": "Handled 4/4 error cases gracefully",
+      "details": {
+        "errors_handled": 4,
+        "tests_run": 4
+      }
+    },
+    "parameter_sensitivity": {
+      "passed": true,
+      "message": "Different parameters produce different results",
+      "details": {
+        "rock_high_energy": [
+          "Storm Runner",
+          "Poison",
+          "\uc788\uc9c0",
+          "9+1#",
+          "Gym Hero"
+        ],
+        "folk_low_energy": [
+          "Keep the Rain",
+          "These Days",
+          "Come Here",
+          "Spacewalk Thoughts",
+          "Library Rain"
+        ]
+      }
+    },
+    "rag_functionality": {
+      "passed": true,
+      "message": "RAG working: 1 documents, context retrieved",
+      "details": {
+        "document_count": 1,
+        "context_length": 26
+      }
+    },
+    "writer_tracking": {
+      "passed": true,
+      "message": "Found 17 writers with statistics",
+      "details": {
+        "writer_count": 17,
+        "top_writer": "A.R. Rahman"
+      }
+    }
+  },
+  "summary": {
+    "total_tests": 6,
+    "passed": 6,
+    "failed": 0,
+    "pass_rate": "100.0%"
+  }
+}
