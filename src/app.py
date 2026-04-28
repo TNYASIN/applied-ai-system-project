@@ -348,7 +348,7 @@ def _handle_oauth_callback():
     code = params["code"]
     client_id     = os.environ.get("SPOTIFY_CLIENT_ID", "")
     client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-    redirect_uri  = os.environ.get("SPOTIFY_REDIRECT_URI", "")
+    redirect_uri  = os.environ.get("SPOTIFY_REDIRECT_URI", "http://localhost:8501/callback")
 
     if not (client_id and client_secret):
         st.error("Spotify credentials not configured — see README.")
