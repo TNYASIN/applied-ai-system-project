@@ -6,6 +6,7 @@ import os
 import json
 import base64
 import requests
+from urllib.parse import urlencode
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 
@@ -51,11 +52,9 @@ class SpotifyClient:
             "response_type": "code",
             "redirect_uri": self.redirect_uri,
             "scope": " ".join(scopes),
-            "show_dialog": "true"
+            "show_dialog": "true",
         }
-        
-        query = "&".join([f"{k}={v}" for k, v in params.items()])
-        return f"{self.AUTH_URL}?{query}"
+        return f"{self.AUTH_URL}?{urlencode(params)}"
     
     def exchange_code_for_token(self, code: str) -> Dict:
         """Exchange authorization code for access token"""

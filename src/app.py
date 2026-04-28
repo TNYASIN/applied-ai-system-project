@@ -227,18 +227,38 @@ def _build_css(colors: Optional[List[str]], accent: str) -> str:
     padding: 12px;
 }}
 
-/* Primary buttons */
-div.stButton > button[kind="primary"] {{
-    background: {accent}22;
-    border: 1px solid {accent}88;
-    color: {accent};
+/* All buttons — base reset for light background */
+div.stButton > button,
+div.stLinkButton > a {{
     font-family: 'Outfit', sans-serif !important;
     font-weight: 600;
+    border-radius: 8px;
     transition: background 0.2s, border 0.2s;
 }}
-div.stButton > button[kind="primary"]:hover {{
-    background: {accent}44;
+
+/* Primary */
+div.stButton > button[kind="primary"],
+div.stLinkButton > a[kind="primary"] {{
+    background: {accent}18;
+    border: 1px solid {accent}88;
+    color: {accent} !important;
+}}
+div.stButton > button[kind="primary"]:hover,
+div.stLinkButton > a[kind="primary"]:hover {{
+    background: {accent}30;
     border-color: {accent};
+}}
+
+/* Secondary / default */
+div.stButton > button[kind="secondary"],
+div.stButton > button:not([kind="primary"]) {{
+    background: rgba(0,0,0,0.05);
+    border: 1px solid rgba(0,0,0,0.18);
+    color: {txt} !important;
+}}
+div.stButton > button[kind="secondary"]:hover,
+div.stButton > button:not([kind="primary"]):hover {{
+    background: rgba(0,0,0,0.10);
 }}
 
 /* Alerts */
@@ -292,6 +312,36 @@ def _render_header(accent: str):
     )
 
 
+# ─── OAuth callback ──────────────────────────────────────────────────────────
+
+def _handle_oauth_callback():
+    """If Spotify redirected back with ?code=, exchange it for a token."""
+    try:
+        params = st.query_params
+    except Exception:
+        return
+    if "code" not in params:
+        return
+
+    code = params["code"]
+    client_id     = os.environ.get("SPOTIFY_CLIENT_ID", "")
+    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+    redirect_uri  = os.environ.get("SPOTIFY_REDIRECT_URI", "")
+
+    if not (client_id and client_secret):
+        st.error("Spotify credentials not configured. See README.")
+        return
+
+    try:
+        if not st.session_state.spotify_client or st.session_state.spotify_client.is_demo():
+            st.session_state.spotify_client = SpotifyClient(client_id, client_secret, redirect_uri)
+        st.session_state.spotify_client.exchange_code_for_token(code)
+        st.query_params.clear()
+        st.rerun()
+    except Exception as e:
+        st.error(f"Spotify authorization failed: {e}")
+
+
 # ─── JS patches ──────────────────────────────────────────────────────────────
 
 def _patch_sidebar_tooltip():
@@ -320,6 +370,7 @@ def _init_services():
 
 # ─── App entry ────────────────────────────────────────────────────────────────
 def main():
+    _handle_oauth_callback()
     recommender, rag_engine, data_manager = _init_services()
 
     # Sidebar: theme + connection status
@@ -343,8 +394,25 @@ def main():
 
         st.markdown("---")
         client = st.session_state.spotify_client
-        if client:
-            st.caption("🎮 Demo mode" if client.is_demo() else "🟢 Spotify connected")
+        if client and not client.is_demo():
+            st.caption("🟢 Spotify connected")
+            st.markdown("**Listening history**")
+            spotify_limit = st.select_slider(
+                "Top tracks",
+                options=[5, 10, 50],
+                value=st.session_state.get("spotify_limit", 10),
+            )
+            spotify_range = st.radio(
+                "Time range",
+                ["Last 6 months", "Last year", "All time"],
+                index=st.session_state.get("spotify_range_idx", 0),
+                label_visibility="collapsed",
+            )
+            st.session_state.spotify_limit = spotify_limit
+            st.session_state.spotify_range_idx = ["Last 6 months", "Last year", "All time"].index(spotify_range)
+            st.session_state.spotify_range = {"Last 6 months": "medium_term", "Last year": "long_term", "All time": "long_term"}[spotify_range]
+        elif client and client.is_demo():
+            st.caption("🎮 Demo mode")
         else:
             st.caption("⚪ Not connected")
 
@@ -413,19 +481,19 @@ def _page_connect():
     redirect_uri  = os.environ.get("SPOTIFY_REDIRECT_URI", "http://localhost:8501/callback")
 
     col1, col2 = st.columns(2)
+
     with col1:
-        if st.button("🔗 Connect to Spotify", type="primary"):
-            if client_id and client_secret:
-                try:
-                    client = SpotifyClient(client_id, client_secret, redirect_uri)
-                    auth_url = client.get_auth_url()
-                    st.success("Ready — click below to authorize.")
-                    st.markdown(f"[Authorize Spotify →]({auth_url})")
-                    st.session_state.spotify_client = client
-                except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.warning("Spotify credentials not configured. See the README for setup instructions.")
+        if client_id and client_secret:
+            try:
+                client = SpotifyClient(client_id, client_secret, redirect_uri)
+                auth_url = client.get_auth_url()
+                st.session_state.spotify_client = client
+                st.link_button("🔗 Connect to Spotify", auth_url, type="primary")
+            except Exception as e:
+                st.error(f"Error building auth URL: {e}")
+        else:
+            st.button("🔗 Connect to Spotify", type="primary", disabled=True)
+            st.caption("Spotify credentials not configured — see README.")
 
     with col2:
         if st.button("🎮 Use Demo Data", type="secondary"):
