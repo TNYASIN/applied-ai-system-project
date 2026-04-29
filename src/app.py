@@ -403,7 +403,7 @@ def _init_base_services():
 
 def _get_recommender(dm) -> MusicRecommender:
     """Per-session recommender so Spotify data stays user-specific."""
-    if "recommender" not in st.session_state:
+    if not st.session_state.get("recommender"):
         st.session_state.recommender = MusicRecommender(dm)
     return st.session_state.recommender
 
