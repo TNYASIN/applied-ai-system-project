@@ -812,12 +812,13 @@ def _fetch_spotify_artist_stats(client) -> pd.DataFrame:
 
 def _fetch_mb_songwriter_stats(tracks: list) -> pd.DataFrame:
     """
-    Look up songwriter credits via MusicBrainz for the given Spotify tracks.
-    Returns DataFrame with columns: writer, role, count, songs.
-    Results are cached in session state.
+    Look up songwriter credits via MusicBrainz for all given tracks.
+    Aggregates across every track so the result shows the most frequently
+    credited songwriters overall (not just for a few tracks).
+    Returns DataFrame: writer, role, count (songs credited on), songs.
     """
     from musicbrainz import lookup_writers_bulk
-    credits = lookup_writers_bulk(tracks, limit=5)
+    credits = lookup_writers_bulk(tracks, limit=len(tracks))
     if not credits:
         return pd.DataFrame()
     writer_songs: dict = {}  # (name, role) -> [titles]
@@ -878,13 +879,19 @@ def _page_writers(recommender, data_manager):
     if spotify_connected:
         mb_df = st.session_state.get("spotify_writer_stats")
 
+        n_tracks = st.session_state.get("spotify_limit", 10)
+        est_secs = n_tracks * 3  # ~3 sec per track (3 MusicBrainz calls each)
+
         if mb_df is None:
-            st.caption("Look up actual songwriter credits via MusicBrainz for your top 5 tracks (takes ~15 seconds).")
+            st.caption(
+                f"Searches MusicBrainz for songwriter credits across all {n_tracks} loaded tracks, "
+                f"then shows the top 5 most credited writers. Takes ~{est_secs} seconds."
+            )
             if st.button("🔍 Load Songwriter Credits", type="primary"):
-                with st.spinner("Looking up songwriter credits via MusicBrainz… (~15 sec)"):
+                with st.spinner(f"Looking up credits for {n_tracks} tracks via MusicBrainz… (~{est_secs} sec)"):
                     tracks = client.get_top_tracks(
                         time_range=st.session_state.get("spotify_range", "medium_term"),
-                        limit=st.session_state.get("spotify_limit", 10),
+                        limit=n_tracks,
                     )
                     mb_df = _fetch_mb_songwriter_stats(tracks)
                     st.session_state.spotify_writer_stats = mb_df
@@ -893,8 +900,9 @@ def _page_writers(recommender, data_manager):
             st.info("No songwriter credits found in MusicBrainz for your top tracks.")
             _writer_credits_from_catalog(recommender)
         else:
-            st.caption("Songwriter credits sourced from MusicBrainz (top 5 tracks)")
-            for _, row in mb_df.iterrows():
+            st.caption(f"Top 5 most credited songwriters across your top {n_tracks} Spotify tracks (via MusicBrainz)")
+            top5 = mb_df.head(5)
+            for _, row in top5.iterrows():
                 role_label = f" · {row['role']}" if row.get("role") else ""
                 with st.expander(f"✍️ {row['writer']}{role_label}  —  {row['count']} songs"):
                     for title in row.get("songs", []):
