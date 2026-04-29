@@ -34,7 +34,7 @@ Claude initially suggested using `@st.cache_resource` for the `MusicRecommender`
 The base catalog (19 songs) skews toward Western indie/folk/rock. Recommendations are limited by whatever genres are in the catalog, so users with different listening habits (K-pop, classical, hip-hop) see fewer matching results.
 
 ### Audio Feature Defaults
-When Spotify tracks are injected from the user's listening history, they lack audio features (Spotify deprecated the `audio-features` endpoint for new apps). Injected tracks default to neutral values (energy=0.65, valence=0.6, etc.) which causes them to rank below fully-specified catalog songs in most scoring scenarios.
+When Spotify tracks are injected from the user's listening history, they lack audio features (Spotify deprecated the `audio-features` endpoint for new apps). Injected tracks default to neutral values (energy=0.65, valence=0.6, etc.) which causes them to rank below fully-specified catalog songs in most scoring scenarios. The writer field defaults to the performing artist's name rather than the actual songwriter. As a side effect, injected tracks score 0.8–1.0 on the confidence metric despite having synthetic data — the score measures structural completeness, not data quality.
 
 ### MusicBrainz Coverage
 MusicBrainz has excellent coverage for Western popular music but lower coverage for non-English tracks, regional genres, and newer releases. Songwriter lookups for K-pop, Bollywood, or underground releases frequently return no results.
@@ -56,7 +56,7 @@ The system has no persistent user profile. Each session starts fresh; preference
 
 ## What Surprised Me During Testing
 
-- **Confidence scoring is binary in practice.** Songs with all fields populated scored 1.0; any missing field dropped the score sharply. A smoother continuous scale would be more informative.
+- **Confidence scoring is structurally complete but semantically hollow.** Songs with all fields populated score 1.0 — but Spotify-injected tracks also score 1.0 because defaults fill every field at injection time. The metric says "I have data" not "this data is accurate." A quality signal based on source (catalog vs. injected vs. missing) would be more meaningful.
 - **Consistency is trivial to achieve but meaningless to prove.** The recommender is deterministic by design (no randomness), so the consistency test always passes. A more useful reliability metric would test accuracy against a ground-truth playlist.
 - **MusicBrainz finds writers you wouldn't expect.** For "Keep the Rain" by Searows, MusicBrainz returned Sufjan Stevens — who wrote the original "Seven Swans" that Searows covered. This is accurate but surfacing cover attributions without context could confuse users.
 

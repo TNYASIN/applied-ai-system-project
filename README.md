@@ -22,7 +22,7 @@ Muze extends that prototype into a full applied AI system: real Spotify listenin
 | **Spotify OAuth** | Connects via Authorization Code flow to pull your real top tracks and listening history |
 | **Content-Based Recommendations** | Weighted scoring across genre, mood, energy, tempo, danceability, valence, and acousticness |
 | **Songwriter Credits** | Looks up actual Written-by / Composed-by credits via MusicBrainz for your top Spotify tracks |
-| **RAG Song Insights** | Vector-stores song metadata; retrieves contextual descriptions for any recommended track |
+| **RAG Song Insights** | Vector-stores song metadata for the full catalog and any connected Spotify tracks; retrieves contextual descriptions for the top recommended song |
 | **Spotify Vibes** | Extracts dominant colors from top album art (Pillow quantization) and tints the UI palette |
 | **Test Harness** | 6-test automated reliability suite with confidence scoring and JSON report export |
 | **Demo Mode** | Full experience with sample data — no Spotify account needed |
@@ -212,7 +212,7 @@ Hosting is free via [share.streamlit.io](https://share.streamlit.io). The app au
 ## AI Features
 
 ### RAG (Retrieval-Augmented Generation) — Required Feature
-The `RAGEngine` stores song metadata as documents in ChromaDB (vector database). When the user requests song insights, the engine performs semantic similarity search to retrieve the most relevant context before generating the description. Falls back to an in-memory dictionary store when ChromaDB is unavailable.
+The `RAGEngine` stores song metadata as documents in ChromaDB (vector database). The full catalog is indexed at startup; when a user connects Spotify, their top tracks are also indexed as they are injected into the recommender. When the user gets recommendations, the engine performs a similarity search against this document store to retrieve context for the top result and displays it as Song Insights. Falls back to an in-memory dictionary store when ChromaDB is unavailable.
 
 ### MusicBrainz Songwriter Lookup — Stretch (RAG Enhancement)
 Extends retrieval beyond the internal catalog to an external knowledge source. For each of the user's Spotify top tracks, the system makes a 3-step MusicBrainz API call chain (recording search → work relations → artist relations) to retrieve verified Written-by / Composed-by credits. Results are aggregated by songwriter, merged across roles (e.g. Composer + Lyricist → one entry), and ranked by distinct-song count.
@@ -221,7 +221,7 @@ Extends retrieval beyond the internal catalog to an external knowledge source. F
 `test_harness.py` runs 6 automated reliability tests: consistency (same input → same output), confidence score validity, error handling (4 invalid input scenarios), parameter sensitivity, RAG functionality, and writer tracking. Results are exported to `test_report.json`. The Analytics tab in the UI exposes a subset of these tests interactively.
 
 ### Confidence Scoring — Guardrail
-The recommender calculates a per-song confidence score (0–1) based on data completeness: base 0.5, +0.1 for genre+mood, +0.2 for writer credits, +0.2 for all audio features present. This lets the UI surface when a recommendation has thin backing data.
+The recommender calculates a per-song confidence score (0–1) based on data completeness: base 0.5, +0.1 for genre+mood, +0.2 for writer credits, +0.2 for all audio features present. Catalog songs with full metadata score 1.0. Spotify-injected tracks also score high (0.8–1.0) because all fields are populated with reasonable defaults at injection time — the score reflects structural completeness, not ground-truth accuracy.
 
 ---
 
@@ -231,6 +231,7 @@ The recommender calculates a per-song confidence score (0–1) based on data com
 - **Demo mode** — all features are exercisable without a Spotify account
 - **Per-session recommender** — stored in `st.session_state` (not `@st.cache_resource`) so injected Spotify tracks stay user-specific
 - **MusicBrainz behind a button** — the 3-call-per-track lookup takes ~3 sec/track; running it on page load would time out, so it's triggered on demand with a time estimate shown
+- **RAG populated eagerly** — catalog songs indexed at startup; Spotify-injected tracks indexed on injection, so Song Insights works for both catalog and personal library songs
 - **Fallback RAG** — in-memory dict store used when ChromaDB is unavailable, maintaining feature parity
 - **Spotify Vibes** — album art colors extracted via Pillow quantization, darkened, then lightened to pastels so the background always stays readable
 
