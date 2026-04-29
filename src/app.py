@@ -813,28 +813,29 @@ def _fetch_spotify_artist_stats(client) -> pd.DataFrame:
 def _fetch_spotify_songwriter_stats(client) -> tuple:
     """
     Fetch songwriter credits from Spotify's credits endpoint for the user's top tracks.
-    Returns (writer_df, credits_available: bool).
+    Returns (writer_df, error_msg_or_None).
     writer_df columns: writer, role, songs (list of titles).
     """
-    if st.session_state.get("spotify_writer_stats") is not None:
-        return st.session_state.spotify_writer_stats, st.session_state.get("spotify_credits_ok", False)
+    cached = st.session_state.get("spotify_writer_stats")
+    if cached is not None:
+        return cached, st.session_state.get("spotify_credits_error")
 
     limit = st.session_state.get("spotify_limit", 10)
     time_range = st.session_state.get("spotify_range", "medium_term")
     try:
         tracks = client.get_top_tracks(time_range=time_range, limit=limit)
         writer_songs: dict = {}  # (writer_name, role) -> [song titles]
-        credits_found = False
+        last_status = None
 
         for track in tracks:
             track_id = track.get("id", "")
             title = track.get("name", "Unknown")
             if not track_id:
                 continue
-            data = client.get_track_credits(track_id)
+            data, status = client.get_track_credits(track_id)
+            last_status = status
             for role_entry in data.get("roleCredits", []):
                 role = role_entry.get("roleTitle", "")
-                # Only songwriter/producer roles, skip performer
                 if not role or role.lower() in ("performed by",):
                     continue
                 for person in role_entry.get("artists", []):
@@ -844,12 +845,12 @@ def _fetch_spotify_songwriter_stats(client) -> tuple:
                         writer_songs.setdefault(key, [])
                         if title not in writer_songs[key]:
                             writer_songs[key].append(title)
-                        credits_found = True
 
-        if not credits_found:
+        if not writer_songs:
+            err = f"Credits endpoint returned status {last_status} — this API may require additional Spotify access."
             st.session_state.spotify_writer_stats = pd.DataFrame()
-            st.session_state.spotify_credits_ok = False
-            return pd.DataFrame(), False
+            st.session_state.spotify_credits_error = err
+            return pd.DataFrame(), err
 
         rows = sorted(
             [{"writer": k[0], "role": k[1], "count": len(v), "songs": v}
@@ -858,12 +859,13 @@ def _fetch_spotify_songwriter_stats(client) -> tuple:
         )
         df = pd.DataFrame(rows)
         st.session_state.spotify_writer_stats = df
-        st.session_state.spotify_credits_ok = True
-        return df, True
+        st.session_state.spotify_credits_error = None
+        return df, None
     except Exception as e:
+        err = str(e)
         st.session_state.spotify_writer_stats = pd.DataFrame()
-        st.session_state.spotify_credits_ok = False
-        return pd.DataFrame(), False
+        st.session_state.spotify_credits_error = err
+        return pd.DataFrame(), err
 
 
 # ─── Page: Writer Credits ─────────────────────────────────────────────────────
@@ -908,9 +910,12 @@ def _page_writers(recommender, data_manager):
 
     if spotify_connected:
         with st.spinner("Fetching songwriter credits from Spotify…"):
-            writer_df, credits_ok = _fetch_spotify_songwriter_stats(client)
+            writer_df, credits_err = _fetch_spotify_songwriter_stats(client)
 
-        if credits_ok and not writer_df.empty:
+        if credits_err:
+            st.warning(f"Spotify credits unavailable: {credits_err}")
+
+        if not writer_df.empty:
             st.caption("Writer and producer credits sourced from Spotify")
             top_writers = writer_df.head(15)
             for _, row in top_writers.iterrows():
@@ -929,7 +934,6 @@ def _page_writers(recommender, data_manager):
                 for title in songs:
                     st.markdown(f"- {title}")
         else:
-            st.caption("Spotify songwriter credits unavailable — showing catalog data")
             _writer_credits_from_catalog(recommender)
     else:
         st.caption("Connect Spotify to see songwriter credits from your listening history, or browse the catalog below.")

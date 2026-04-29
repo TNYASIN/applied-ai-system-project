@@ -221,26 +221,26 @@ class SpotifyClient:
         params = f"?q={query}&type=track&limit={limit}"
         return self._make_request("GET", f"/search{params}")["tracks"]["items"]
     
-    def get_track_credits(self, track_id: str) -> Dict:
+    def get_track_credits(self, track_id: str) -> tuple:
         """
-        Fetch songwriter/producer credits for a track via Spotify's credits endpoint.
-        Returns dict with roleCredits list, each entry having roleTitle + artists.
-        Falls back to empty dict if unavailable.
+        Fetch songwriter/producer credits via Spotify's credits endpoint.
+        Returns (data_dict, status_code).  data_dict has 'roleCredits' on success.
         """
         if not self.access_token:
-            return {}
+            return {}, 0
         url = f"https://spclient.wg.spotify.com/track-credits-view/v0/experimental/{track_id}/credits"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
+            "app-platform": "WebPlayer",
         }
         try:
-            resp = requests.get(url, headers=headers, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=8)
             if resp.status_code == 200:
-                return resp.json()
-        except Exception:
-            pass
-        return {}
+                return resp.json(), 200
+            return {}, resp.status_code
+        except Exception as e:
+            return {}, -1
 
     def get_track_features(self, track_id: str) -> Dict:
         """Get audio features for a track"""
