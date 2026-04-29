@@ -12,14 +12,13 @@ class DataManager:
     
     def __init__(self, data_path: str = None):
         if data_path is None:
-            # Use data from original project
-            data_path = os.path.join(
-                os.path.dirname(__file__), 
-                '..', 
-                '..',
-                'ai110-module3show-musicrecommendersimulation-starter',
-                'data'
+            # Prefer data/ inside this repo; fall back to sibling module-3 project
+            own_data = os.path.join(os.path.dirname(__file__), '..', 'data')
+            module3_data = os.path.join(
+                os.path.dirname(__file__), '..', '..',
+                'ai110-module3show-musicrecommendersimulation-starter', 'data'
             )
+            data_path = own_data if os.path.isdir(own_data) else module3_data
         
         self.data_path = data_path
         self.songs = self._load_songs()
