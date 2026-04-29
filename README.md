@@ -9,9 +9,9 @@ Muze extends that prototype into a full applied AI system: real Spotify listenin
 
 ---
 
-## Demo Walkthrough (Loom)
+## Demo Walkthrough
 
-> 📹 **[Watch the full walkthrough →](#)** *(add your Loom link here before submission)*
+> 📹 **[Watch the full walkthrough →](https://drive.google.com/file/d/1kEZ88vkOMjonP0c36jrbyYpGMeYektvw/view?usp=sharing)**
 
 ---
 
