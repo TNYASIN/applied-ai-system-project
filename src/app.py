@@ -31,6 +31,7 @@ for _k, _v in {
     'last_recommendations': [],
     'spotify_injected': False,
     'spotify_writer_stats': None,
+    'spotify_artist_stats': None,
     'recommender': None,
 }.items():
     if _k not in st.session_state:
@@ -372,6 +373,7 @@ def _handle_oauth_callback():
         st.session_state.recommender = None
         st.session_state.spotify_injected = False
         st.session_state.spotify_writer_stats = None
+        st.session_state.spotify_artist_stats = None
         # Clear the ?code= from the URL
         try:
             st.query_params.clear()
@@ -553,6 +555,7 @@ def main():
             new_range_idx = _RANGE_LABELS.index(spotify_range)
             if prev_limit != spotify_limit or prev_range_idx != new_range_idx:
                 st.session_state.spotify_writer_stats = None
+                st.session_state.spotify_artist_stats = None
                 st.session_state.spotify_injected = False
             st.session_state.spotify_limit = spotify_limit
             st.session_state.spotify_range_idx = new_range_idx
@@ -775,12 +778,12 @@ def _page_recommendations(recommender, rag_engine):
         st.session_state.last_recommendations = results
 
 
-# ─── Spotify writer stats (built directly from top tracks) ───────────────────
+# ─── Spotify data fetchers ────────────────────────────────────────────────────
 
-def _fetch_spotify_writer_stats(client) -> pd.DataFrame:
-    """Build artist→songs stats from user's Spotify top tracks. Cached in session state."""
-    if st.session_state.get("spotify_writer_stats") is not None:
-        return st.session_state.spotify_writer_stats
+def _fetch_spotify_artist_stats(client) -> pd.DataFrame:
+    """Performing-artist → songs from Spotify top tracks. Cached in session state."""
+    if st.session_state.get("spotify_artist_stats") is not None:
+        return st.session_state.spotify_artist_stats
 
     limit = st.session_state.get("spotify_limit", 10)
     time_range = st.session_state.get("spotify_range", "medium_term")
@@ -796,82 +799,166 @@ def _fetch_spotify_writer_stats(client) -> pd.DataFrame:
                     if title not in artist_songs[name]:
                         artist_songs[name].append(title)
         rows = sorted(
-            [{"writer": a, "count": len(s), "songs": s} for a, s in artist_songs.items()],
+            [{"artist": a, "count": len(s), "songs": s} for a, s in artist_songs.items()],
             key=lambda x: -x["count"],
         )
         df = pd.DataFrame(rows) if rows else pd.DataFrame()
-        st.session_state.spotify_writer_stats = df
+        st.session_state.spotify_artist_stats = df
         return df
     except Exception as e:
-        st.error(f"Could not load Spotify data: {e}")
+        st.error(f"Could not load Spotify artist data: {e}")
         return pd.DataFrame()
+
+
+def _fetch_spotify_songwriter_stats(client) -> tuple:
+    """
+    Fetch songwriter credits from Spotify's credits endpoint for the user's top tracks.
+    Returns (writer_df, credits_available: bool).
+    writer_df columns: writer, role, songs (list of titles).
+    """
+    if st.session_state.get("spotify_writer_stats") is not None:
+        return st.session_state.spotify_writer_stats, st.session_state.get("spotify_credits_ok", False)
+
+    limit = st.session_state.get("spotify_limit", 10)
+    time_range = st.session_state.get("spotify_range", "medium_term")
+    try:
+        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
+        writer_songs: dict = {}  # (writer_name, role) -> [song titles]
+        credits_found = False
+
+        for track in tracks:
+            track_id = track.get("id", "")
+            title = track.get("name", "Unknown")
+            if not track_id:
+                continue
+            data = client.get_track_credits(track_id)
+            for role_entry in data.get("roleCredits", []):
+                role = role_entry.get("roleTitle", "")
+                # Only songwriter/producer roles, skip performer
+                if not role or role.lower() in ("performed by",):
+                    continue
+                for person in role_entry.get("artists", []):
+                    name = person.get("name", "")
+                    if name:
+                        key = (name, role)
+                        writer_songs.setdefault(key, [])
+                        if title not in writer_songs[key]:
+                            writer_songs[key].append(title)
+                        credits_found = True
+
+        if not credits_found:
+            st.session_state.spotify_writer_stats = pd.DataFrame()
+            st.session_state.spotify_credits_ok = False
+            return pd.DataFrame(), False
+
+        rows = sorted(
+            [{"writer": k[0], "role": k[1], "count": len(v), "songs": v}
+             for k, v in writer_songs.items()],
+            key=lambda x: -x["count"],
+        )
+        df = pd.DataFrame(rows)
+        st.session_state.spotify_writer_stats = df
+        st.session_state.spotify_credits_ok = True
+        return df, True
+    except Exception as e:
+        st.session_state.spotify_writer_stats = pd.DataFrame()
+        st.session_state.spotify_credits_ok = False
+        return pd.DataFrame(), False
 
 
 # ─── Page: Writer Credits ─────────────────────────────────────────────────────
 def _page_writers(recommender, data_manager):
     st.header("✍️ Writer & Composer Credits")
-    st.markdown("Explore the songwriters behind your music.")
 
     client = st.session_state.spotify_client
     spotify_connected = client and not client.is_demo() and client.access_token
 
-    if spotify_connected:
-        with st.spinner("Loading your Spotify artists…"):
-            writer_stats = _fetch_spotify_writer_stats(client)
-        if writer_stats.empty:
-            st.info("No top tracks found on Spotify yet — play more music and come back!")
-            return
-        st.caption(f"Based on your top {st.session_state.get('spotify_limit', 10)} tracks from Spotify")
-    else:
-        writer_stats = recommender.get_writer_statistics()
-        if writer_stats.empty:
-            st.info("Connect Spotify or use demo mode to see writer statistics.")
-            return
-
-    st.markdown("### 🏆 Top Artists")
-    top = writer_stats.head(10)
     import altair as alt
-    chart = (
-        alt.Chart(top)
-        .mark_bar(color="#1DB954")
-        .encode(
-            x=alt.X("count", title="Songs"),
-            y=alt.Y("writer", sort="-x", title=""),
-            tooltip=["writer", "count"],
-        )
-        .properties(height=280)
-    )
-    st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("### 📝 Artists")
-    for _, row in top.iterrows():
-        with st.expander(f"✍️ {row['writer']}  —  {row['count']} songs"):
-            songs = row.get("songs", [])
-            if songs:
+    # ── Section 1: Your Top Artists (performing artists from Spotify) ─────────
+    if spotify_connected:
+        st.markdown("### 🎤 Your Top Artists")
+        st.caption(f"Performing artists from your top {st.session_state.get('spotify_limit', 10)} Spotify tracks")
+        with st.spinner("Loading…"):
+            artist_stats = _fetch_spotify_artist_stats(client)
+        if not artist_stats.empty:
+            top_artists = artist_stats.head(10)
+            chart = (
+                alt.Chart(top_artists)
+                .mark_bar(color="#1DB954")
+                .encode(
+                    x=alt.X("count", title="Songs"),
+                    y=alt.Y("artist", sort="-x", title=""),
+                    tooltip=["artist", "count"],
+                )
+                .properties(height=min(260, len(top_artists) * 30 + 40))
+            )
+            st.altair_chart(chart, use_container_width=True)
+            for _, row in top_artists.iterrows():
+                with st.expander(f"🎤 {row['artist']}  —  {row['count']} songs"):
+                    for title in row.get("songs", []):
+                        st.markdown(f"- {title}")
+        else:
+            st.info("No top tracks found — play more music on Spotify and come back!")
+
+        st.markdown("---")
+
+    # ── Section 2: Songwriters & Composers ───────────────────────────────────
+    st.markdown("### ✍️ Songwriters & Composers")
+
+    if spotify_connected:
+        with st.spinner("Fetching songwriter credits from Spotify…"):
+            writer_df, credits_ok = _fetch_spotify_songwriter_stats(client)
+
+        if credits_ok and not writer_df.empty:
+            st.caption("Writer and producer credits sourced from Spotify")
+            top_writers = writer_df.head(15)
+            for _, row in top_writers.iterrows():
+                role_label = f" · {row['role']}" if row.get("role") else ""
+                with st.expander(f"✍️ {row['writer']}{role_label}  —  {row['count']} songs"):
+                    for title in row.get("songs", []):
+                        st.markdown(f"- {title}")
+
+            st.markdown("---")
+            st.markdown("### 🔍 Discover by Songwriter")
+            all_writers = sorted(writer_df["writer"].unique().tolist())
+            selected = st.selectbox("Choose a songwriter", all_writers)
+            if selected:
+                songs = writer_df[writer_df["writer"] == selected]["songs"].explode().dropna().unique()
+                st.markdown(f"**Songs credited to {selected}:**")
                 for title in songs:
                     st.markdown(f"- {title}")
-
-    st.markdown("---")
-    st.markdown("### 🔍 Discover by Artist")
-    all_writers = sorted(writer_stats["writer"].tolist())
-    selected_writer = st.selectbox("Choose an artist", all_writers)
-    if selected_writer:
-        if spotify_connected:
-            # Show songs directly from the Spotify stats we already have
-            row = writer_stats[writer_stats["writer"] == selected_writer]
-            songs = row.iloc[0]["songs"] if not row.empty else []
-            if songs:
-                st.markdown(f"**Your top tracks by {selected_writer}:**")
-                for title in songs:
-                    st.markdown(f"- **{title}**")
         else:
-            writer_songs = recommender.recommend_by_writer(selected_writer)
-            if writer_songs:
-                st.markdown(f"**Songs by {selected_writer}:**")
-                for s in writer_songs:
-                    st.markdown(f"- **{s['title']}** — {s.get('artist', 'Unknown')}  ·  {s.get('genre', '')}")
-            else:
-                st.info("No songs found for this writer in the catalog.")
+            st.caption("Spotify songwriter credits unavailable — showing catalog data")
+            _writer_credits_from_catalog(recommender)
+    else:
+        st.caption("Connect Spotify to see songwriter credits from your listening history, or browse the catalog below.")
+        _writer_credits_from_catalog(recommender)
+
+
+def _writer_credits_from_catalog(recommender):
+    """Fallback: show songwriter stats from the static catalog."""
+    writer_stats = recommender.get_writer_statistics()
+    if writer_stats.empty:
+        st.info("Connect Spotify or use demo mode to populate the catalog.")
+        return
+    top_writers = writer_stats.head(10)
+    for _, row in top_writers.iterrows():
+        with st.expander(f"✍️ {row['writer']}  —  {row['count']} songs"):
+            for title in row.get("songs", []):
+                st.markdown(f"- {title}")
+    st.markdown("---")
+    st.markdown("### 🔍 Discover by Songwriter")
+    all_writers = sorted(writer_stats["writer"].tolist())
+    selected = st.selectbox("Choose a songwriter", all_writers)
+    if selected:
+        writer_songs = recommender.recommend_by_writer(selected)
+        if writer_songs:
+            st.markdown(f"**Songs written by {selected}:**")
+            for s in writer_songs:
+                st.markdown(f"- **{s['title']}** — {s.get('artist', 'Unknown')}  ·  {s.get('genre', '')}")
+        else:
+            st.info("No songs found for this songwriter in the catalog.")
 
 
 # ─── Page: Analytics ──────────────────────────────────────────────────────────
