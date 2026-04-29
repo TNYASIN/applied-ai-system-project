@@ -127,8 +127,15 @@ class SpotifyClient:
         
         url = f"{self.API_BASE}{endpoint}"
         response = requests.request(method, url, headers=headers, **kwargs)
+
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "a few seconds")
+            raise requests.HTTPError(
+                f"Spotify rate limit hit. Wait {retry_after}s and try again.",
+                response=response,
+            )
+
         response.raise_for_status()
-        
         return response.json()
     
     def _get_demo_response(self, endpoint: str) -> Dict:

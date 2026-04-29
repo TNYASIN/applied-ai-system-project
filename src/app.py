@@ -33,6 +33,7 @@ for _k, _v in {
     'spotify_writer_stats': None,
     'spotify_artist_stats': None,
     'recommender': None,
+    'ym_recent': None,
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -639,35 +640,38 @@ listening history, favorite songwriters, and taste profile.
 # ─── Page: Your Music (Spotify Listening History) ───────────────────────────
 def _page_your_music():
     client = st.session_state.spotify_client
-    
+
     if not client or client.is_demo():
         st.info("🎧 Connect Spotify to see your listening history here.")
         return
-    
+
     st.header("🎧 Your Music")
     st.markdown("Your actual listening history from Spotify.")
     st.markdown("---")
-    
+
+    limit = st.session_state.get("spotify_limit", 10)
+    time_range = st.session_state.get("spotify_range", "medium_term")
+    cache_key = f"ym_tracks_{time_range}_{limit}"
+
     try:
-        # Get user's top tracks
-        limit = st.session_state.get("spotify_limit", 10)
-        time_range = st.session_state.get("spotify_range", "medium_term")
-        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
-        
+        # Cache top tracks for this session/range/limit to avoid re-fetching on every render
+        if st.session_state.get(cache_key) is None:
+            st.session_state[cache_key] = client.get_top_tracks(time_range=time_range, limit=limit)
+        tracks = st.session_state[cache_key]
+
         if not tracks:
             st.info("No top tracks found. Play more music on Spotify!")
             return
-        
+
         st.markdown("### Your Top Tracks")
         for i, track in enumerate(tracks, 1):
-            # Track is returned directly from Spotify API
             name = track.get("name", "Unknown")
             artists = ", ".join([a.get("name", "") for a in track.get("artists", [])])
             album = track.get("album", {}).get("name", "Unknown")
             duration_ms = track.get("duration_ms", 0)
             duration_min = duration_ms // 60000
             duration_sec = (duration_ms % 60000) // 1000
-            
+
             with st.container():
                 c1, c2 = st.columns([4, 1])
                 with c1:
@@ -676,17 +680,26 @@ def _page_your_music():
                 with c2:
                     st.caption(f"{duration_min}:{duration_sec:02d}")
                 st.divider()
-        
-        # Get recently played
+
+        # Cache recently played too
+        if st.session_state.get("ym_recent") is None:
+            try:
+                st.session_state.ym_recent = client.get_recently_played(limit=10)
+            except Exception:
+                st.session_state.ym_recent = []
+
         st.markdown("### Recently Played")
-        recent = client.get_recently_played(limit=10)
-        for track in recent:
+        for track in st.session_state.ym_recent:
             name = track.get("track", {}).get("name", "Unknown")
             artists = ", ".join([a.get("name", "") for a in track.get("track", {}).get("artists", [])])
             st.caption(f"🎵 {name} — {artists}")
-            
+
     except Exception as e:
-        st.error(f"Error loading your music: {e}")
+        msg = str(e)
+        if "429" in msg or "rate limit" in msg.lower():
+            st.warning("⏱ Spotify rate limit reached. Wait a few seconds and refresh the page.")
+        else:
+            st.error(f"Error loading your music: {e}")
 
 
 # ─── Page: Connect Spotify ────────────────────────────────────────────────────
