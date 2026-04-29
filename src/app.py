@@ -455,7 +455,7 @@ def _map_spotify_genre(genre_list: list) -> str:
     return "Pop"
 
 
-def _enrich_recommender_with_spotify(client, recommender: MusicRecommender):
+def _enrich_recommender_with_spotify(client, recommender: MusicRecommender, rag_engine: RAGEngine):
     """Fetch user's Spotify top tracks and inject them into the recommender catalog."""
     if st.session_state.get("spotify_injected"):
         return
@@ -505,6 +505,7 @@ def _enrich_recommender_with_spotify(client, recommender: MusicRecommender):
             })
 
         recommender.inject_tracks(songs_to_inject)
+        rag_engine.bulk_add_songs(songs_to_inject)
         st.session_state.spotify_injected = True
         st.session_state.spotify_injected_count = len(songs_to_inject)
     except Exception as e:
@@ -520,7 +521,7 @@ def main():
     # Inject real Spotify tracks into this session's recommender once connected
     client = st.session_state.spotify_client
     if client and not client.is_demo() and client.access_token:
-        _enrich_recommender_with_spotify(client, recommender)
+        _enrich_recommender_with_spotify(client, recommender, rag_engine)
 
     # Sidebar: theme + connection status
     with st.sidebar:
@@ -981,13 +982,14 @@ def _writer_credits_from_catalog(recommender):
 def _page_analytics(recommender, rag_engine, data_manager):
     st.header("📊 Analytics & Testing")
 
+    all_songs = recommender.songs if hasattr(recommender, "songs") else data_manager.get_songs()
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("Total Songs", len(data_manager.get_songs()))
+        st.metric("Total Songs", len(all_songs))
     with c2:
-        st.metric("Total Writers", len(data_manager.get_writers()))
+        st.metric("Total Writers", all_songs["writer"].nunique() if "writer" in all_songs.columns else len(data_manager.get_writers()))
     with c3:
-        st.metric("Genres", len(data_manager.get_songs()["genre"].unique()))
+        st.metric("Genres", all_songs["genre"].nunique() if "genre" in all_songs.columns else len(data_manager.get_songs()["genre"].unique()))
     with c4:
         st.metric("RAG Documents", rag_engine.get_document_count())
 
