@@ -30,6 +30,7 @@ for _k, _v in {
     'theme_colors': None,
     'last_recommendations': [],
     'spotify_injected': False,
+    'spotify_writer_stats': None,
     'recommender': None,
 }.items():
     if _k not in st.session_state:
@@ -124,7 +125,8 @@ def _load_spotify_palette() -> Optional[List[str]]:
 
 def _build_css(colors: Optional[List[str]], accent: str) -> str:
     # Always light — warm off-white default, pastel shift when Spotify Vibes on
-    if colors and len(colors) >= 3:
+    vibes = bool(colors and len(colors) >= 3)
+    if vibes:
         c = [_lighten_hex(x, 0.82) for x in colors[:4]]
         c = (c + [c[-1]])[:4]
     else:
@@ -133,6 +135,8 @@ def _build_css(colors: Optional[List[str]], accent: str) -> str:
     txt       = "#1c1814"
     txt_muted = "#6b6560"
     txt_faint = "#9e9892"
+    # In Vibes mode: headings pick up the accent tint; links/highlights too
+    heading_color = accent if vibes else txt
 
     return f"""<style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&display=swap');
@@ -160,6 +164,7 @@ def _build_css(colors: Optional[List[str]], accent: str) -> str:
     font-family: 'Syne', sans-serif !important;
     font-weight: 700;
     letter-spacing: -0.3px;
+    color: {heading_color} !important;
 }}
 
 /* Background */
@@ -219,8 +224,9 @@ def _build_css(colors: Optional[List[str]], accent: str) -> str:
     padding: 6px 14px;
 }}
 [data-testid="stTabs"] [aria-selected="true"] {{
-    background: rgba(0,0,0,0.10) !important;
-    color: {txt} !important;
+    background: {accent}18 !important;
+    color: {heading_color} !important;
+    font-weight: 600 !important;
 }}
 
 /* Metric cards */
@@ -362,9 +368,10 @@ def _handle_oauth_callback():
         client = SpotifyClient(client_id, client_secret, redirect_uri)
         client.exchange_code_for_token(code)
         st.session_state.spotify_client = client
-        # Reset per-session recommender so Spotify tracks get injected fresh
+        # Reset per-session data so Spotify tracks get injected fresh
         st.session_state.recommender = None
         st.session_state.spotify_injected = False
+        st.session_state.spotify_writer_stats = None
         # Clear the ?code= from the URL
         try:
             st.query_params.clear()
@@ -518,7 +525,9 @@ def main():
             with st.spinner("Pulling album palette…"):
                 _load_spotify_palette()
 
-        accent = "#1a7a40"
+        # Derive accent from Vibes palette when available, else default green
+        raw_palette = st.session_state.theme_colors if vibes_on else None
+        accent = raw_palette[0] if raw_palette else "#1a7a40"
 
         st.markdown("---")
         client = st.session_state.spotify_client
@@ -530,15 +539,24 @@ def main():
                 options=[5, 10, 50],
                 value=st.session_state.get("spotify_limit", 10),
             )
+            _RANGE_LABELS = ["Last 4 weeks", "Last 6 months", "All time"]
+            _RANGE_API    = {"Last 4 weeks": "short_term", "Last 6 months": "medium_term", "All time": "long_term"}
             spotify_range = st.radio(
                 "Time range",
-                ["Last 6 months", "Last year", "All time"],
-                index=st.session_state.get("spotify_range_idx", 0),
+                _RANGE_LABELS,
+                index=st.session_state.get("spotify_range_idx", 1),
                 label_visibility="collapsed",
             )
+            # Invalidate cached Spotify data when settings change
+            prev_limit = st.session_state.get("spotify_limit")
+            prev_range_idx = st.session_state.get("spotify_range_idx")
+            new_range_idx = _RANGE_LABELS.index(spotify_range)
+            if prev_limit != spotify_limit or prev_range_idx != new_range_idx:
+                st.session_state.spotify_writer_stats = None
+                st.session_state.spotify_injected = False
             st.session_state.spotify_limit = spotify_limit
-            st.session_state.spotify_range_idx = ["Last 6 months", "Last year", "All time"].index(spotify_range)
-            st.session_state.spotify_range = {"Last 6 months": "medium_term", "Last year": "long_term", "All time": "long_term"}[spotify_range]
+            st.session_state.spotify_range_idx = new_range_idx
+            st.session_state.spotify_range = _RANGE_API[spotify_range]
         elif client and client.is_demo():
             st.caption("🎮 Demo mode")
         else:
@@ -757,22 +775,60 @@ def _page_recommendations(recommender, rag_engine):
         st.session_state.last_recommendations = results
 
 
+# ─── Spotify writer stats (built directly from top tracks) ───────────────────
+
+def _fetch_spotify_writer_stats(client) -> pd.DataFrame:
+    """Build artist→songs stats from user's Spotify top tracks. Cached in session state."""
+    if st.session_state.get("spotify_writer_stats") is not None:
+        return st.session_state.spotify_writer_stats
+
+    limit = st.session_state.get("spotify_limit", 10)
+    time_range = st.session_state.get("spotify_range", "medium_term")
+    try:
+        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
+        artist_songs: dict = {}
+        for track in tracks:
+            title = track.get("name", "Unknown")
+            for artist in track.get("artists", []):
+                name = artist.get("name", "")
+                if name:
+                    artist_songs.setdefault(name, [])
+                    if title not in artist_songs[name]:
+                        artist_songs[name].append(title)
+        rows = sorted(
+            [{"writer": a, "count": len(s), "songs": s} for a, s in artist_songs.items()],
+            key=lambda x: -x["count"],
+        )
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+        st.session_state.spotify_writer_stats = df
+        return df
+    except Exception as e:
+        st.error(f"Could not load Spotify data: {e}")
+        return pd.DataFrame()
+
+
 # ─── Page: Writer Credits ─────────────────────────────────────────────────────
 def _page_writers(recommender, data_manager):
     st.header("✍️ Writer & Composer Credits")
     st.markdown("Explore the songwriters behind your music.")
 
-    writer_stats = recommender.get_writer_statistics()
-    if writer_stats.empty:
-        st.info("Connect Spotify or use demo mode to see writer statistics.")
-        return
-
     client = st.session_state.spotify_client
     spotify_connected = client and not client.is_demo() and client.access_token
-    if spotify_connected and st.session_state.get("spotify_injected"):
-        st.caption(f"Showing writers from your Spotify listening history + catalog ({st.session_state.get('spotify_injected_count', 0)} tracks loaded)")
 
-    st.markdown("### 🏆 Top Writers")
+    if spotify_connected:
+        with st.spinner("Loading your Spotify artists…"):
+            writer_stats = _fetch_spotify_writer_stats(client)
+        if writer_stats.empty:
+            st.info("No top tracks found on Spotify yet — play more music and come back!")
+            return
+        st.caption(f"Based on your top {st.session_state.get('spotify_limit', 10)} tracks from Spotify")
+    else:
+        writer_stats = recommender.get_writer_statistics()
+        if writer_stats.empty:
+            st.info("Connect Spotify or use demo mode to see writer statistics.")
+            return
+
+    st.markdown("### 🏆 Top Artists")
     top = writer_stats.head(10)
     import altair as alt
     chart = (
@@ -787,7 +843,7 @@ def _page_writers(recommender, data_manager):
     )
     st.altair_chart(chart, use_container_width=True)
 
-    st.markdown("### 📝 Writers")
+    st.markdown("### 📝 Artists")
     for _, row in top.iterrows():
         with st.expander(f"✍️ {row['writer']}  —  {row['count']} songs"):
             songs = row.get("songs", [])
@@ -796,17 +852,26 @@ def _page_writers(recommender, data_manager):
                     st.markdown(f"- {title}")
 
     st.markdown("---")
-    st.markdown("### 🔍 Discover by Writer")
+    st.markdown("### 🔍 Discover by Artist")
     all_writers = sorted(writer_stats["writer"].tolist())
-    selected_writer = st.selectbox("Choose a writer", all_writers)
+    selected_writer = st.selectbox("Choose an artist", all_writers)
     if selected_writer:
-        writer_songs = recommender.recommend_by_writer(selected_writer)
-        if writer_songs:
-            st.markdown(f"**Songs by {selected_writer}:**")
-            for s in writer_songs:
-                st.markdown(f"- **{s['title']}** — {s.get('artist', 'Unknown')}  ·  {s.get('genre', '')}")
+        if spotify_connected:
+            # Show songs directly from the Spotify stats we already have
+            row = writer_stats[writer_stats["writer"] == selected_writer]
+            songs = row.iloc[0]["songs"] if not row.empty else []
+            if songs:
+                st.markdown(f"**Your top tracks by {selected_writer}:**")
+                for title in songs:
+                    st.markdown(f"- **{title}**")
         else:
-            st.info("No songs found for this writer in the catalog.")
+            writer_songs = recommender.recommend_by_writer(selected_writer)
+            if writer_songs:
+                st.markdown(f"**Songs by {selected_writer}:**")
+                for s in writer_songs:
+                    st.markdown(f"- **{s['title']}** — {s.get('artist', 'Unknown')}  ·  {s.get('genre', '')}")
+            else:
+                st.info("No songs found for this writer in the catalog.")
 
 
 # ─── Page: Analytics ──────────────────────────────────────────────────────────
