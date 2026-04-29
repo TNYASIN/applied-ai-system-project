@@ -59,7 +59,7 @@ MusicBrainz API
 [Test Harness] ──► JSON Report
 ```
 
-See [`assets/architecture.png`](assets/architecture.png) for the full diagram.
+See [`assets/architecture.md`](assets/architecture.md) for the full Mermaid diagram.
 
 ### Components
 

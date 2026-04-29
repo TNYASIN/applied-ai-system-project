@@ -418,7 +418,9 @@ def _patch_sidebar_tooltip():
 @st.cache_resource
 def _init_base_services():
     dm = DataManager()
-    return RAGEngine(), dm
+    rag = RAGEngine()
+    rag.bulk_add_songs(dm.get_songs().to_dict("records"))
+    return rag, dm
 
 
 def _get_recommender(dm) -> MusicRecommender:
