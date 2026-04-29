@@ -810,62 +810,29 @@ def _fetch_spotify_artist_stats(client) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _fetch_spotify_songwriter_stats(client) -> tuple:
+def _fetch_mb_songwriter_stats(tracks: list) -> pd.DataFrame:
     """
-    Fetch songwriter credits from Spotify's credits endpoint for the user's top tracks.
-    Returns (writer_df, error_msg_or_None).
-    writer_df columns: writer, role, songs (list of titles).
+    Look up songwriter credits via MusicBrainz for the given Spotify tracks.
+    Returns DataFrame with columns: writer, role, count, songs.
+    Results are cached in session state.
     """
-    cached = st.session_state.get("spotify_writer_stats")
-    if cached is not None:
-        return cached, st.session_state.get("spotify_credits_error")
-
-    limit = st.session_state.get("spotify_limit", 10)
-    time_range = st.session_state.get("spotify_range", "medium_term")
-    try:
-        tracks = client.get_top_tracks(time_range=time_range, limit=limit)
-        writer_songs: dict = {}  # (writer_name, role) -> [song titles]
-        last_status = None
-
-        for track in tracks:
-            track_id = track.get("id", "")
-            title = track.get("name", "Unknown")
-            if not track_id:
-                continue
-            data, status = client.get_track_credits(track_id)
-            last_status = status
-            for role_entry in data.get("roleCredits", []):
-                role = role_entry.get("roleTitle", "")
-                if not role or role.lower() in ("performed by",):
-                    continue
-                for person in role_entry.get("artists", []):
-                    name = person.get("name", "")
-                    if name:
-                        key = (name, role)
-                        writer_songs.setdefault(key, [])
-                        if title not in writer_songs[key]:
-                            writer_songs[key].append(title)
-
-        if not writer_songs:
-            err = f"Credits endpoint returned status {last_status} — this API may require additional Spotify access."
-            st.session_state.spotify_writer_stats = pd.DataFrame()
-            st.session_state.spotify_credits_error = err
-            return pd.DataFrame(), err
-
-        rows = sorted(
-            [{"writer": k[0], "role": k[1], "count": len(v), "songs": v}
-             for k, v in writer_songs.items()],
-            key=lambda x: -x["count"],
-        )
-        df = pd.DataFrame(rows)
-        st.session_state.spotify_writer_stats = df
-        st.session_state.spotify_credits_error = None
-        return df, None
-    except Exception as e:
-        err = str(e)
-        st.session_state.spotify_writer_stats = pd.DataFrame()
-        st.session_state.spotify_credits_error = err
-        return pd.DataFrame(), err
+    from musicbrainz import lookup_writers_bulk
+    credits = lookup_writers_bulk(tracks, limit=5)
+    if not credits:
+        return pd.DataFrame()
+    writer_songs: dict = {}  # (name, role) -> [titles]
+    for title, writers in credits.items():
+        for w in writers:
+            key = (w["name"], w["role"])
+            writer_songs.setdefault(key, [])
+            if title not in writer_songs[key]:
+                writer_songs[key].append(title)
+    rows = sorted(
+        [{"writer": k[0], "role": k[1], "count": len(v), "songs": v}
+         for k, v in writer_songs.items()],
+        key=lambda x: -x["count"],
+    )
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
 # ─── Page: Writer Credits ─────────────────────────────────────────────────────
@@ -909,16 +876,25 @@ def _page_writers(recommender, data_manager):
     st.markdown("### ✍️ Songwriters & Composers")
 
     if spotify_connected:
-        with st.spinner("Fetching songwriter credits from Spotify…"):
-            writer_df, credits_err = _fetch_spotify_songwriter_stats(client)
+        mb_df = st.session_state.get("spotify_writer_stats")
 
-        if credits_err:
-            st.warning(f"Spotify credits unavailable: {credits_err}")
-
-        if not writer_df.empty:
-            st.caption("Writer and producer credits sourced from Spotify")
-            top_writers = writer_df.head(15)
-            for _, row in top_writers.iterrows():
+        if mb_df is None:
+            st.caption("Look up actual songwriter credits via MusicBrainz for your top 5 tracks (takes ~15 seconds).")
+            if st.button("🔍 Load Songwriter Credits", type="primary"):
+                with st.spinner("Looking up songwriter credits via MusicBrainz… (~15 sec)"):
+                    tracks = client.get_top_tracks(
+                        time_range=st.session_state.get("spotify_range", "medium_term"),
+                        limit=st.session_state.get("spotify_limit", 10),
+                    )
+                    mb_df = _fetch_mb_songwriter_stats(tracks)
+                    st.session_state.spotify_writer_stats = mb_df
+                st.rerun()
+        elif mb_df.empty:
+            st.info("No songwriter credits found in MusicBrainz for your top tracks.")
+            _writer_credits_from_catalog(recommender)
+        else:
+            st.caption("Songwriter credits sourced from MusicBrainz (top 5 tracks)")
+            for _, row in mb_df.iterrows():
                 role_label = f" · {row['role']}" if row.get("role") else ""
                 with st.expander(f"✍️ {row['writer']}{role_label}  —  {row['count']} songs"):
                     for title in row.get("songs", []):
@@ -926,17 +902,15 @@ def _page_writers(recommender, data_manager):
 
             st.markdown("---")
             st.markdown("### 🔍 Discover by Songwriter")
-            all_writers = sorted(writer_df["writer"].unique().tolist())
+            all_writers = sorted(mb_df["writer"].unique().tolist())
             selected = st.selectbox("Choose a songwriter", all_writers)
             if selected:
-                songs = writer_df[writer_df["writer"] == selected]["songs"].explode().dropna().unique()
+                songs = mb_df[mb_df["writer"] == selected]["songs"].explode().dropna().unique()
                 st.markdown(f"**Songs credited to {selected}:**")
                 for title in songs:
                     st.markdown(f"- {title}")
-        else:
-            _writer_credits_from_catalog(recommender)
     else:
-        st.caption("Connect Spotify to see songwriter credits from your listening history, or browse the catalog below.")
+        st.caption("Connect Spotify to load songwriter credits from MusicBrainz, or browse the catalog below.")
         _writer_credits_from_catalog(recommender)
 
 
