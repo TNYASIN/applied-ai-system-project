@@ -281,20 +281,31 @@ div.stButton > button:not([kind="primary"]):hover {{
 hr {{ border-color: rgba(0,0,0,0.09); }}
 
 /* Expanders */
-details[data-testid="stExpander"] {{
-    background: rgba(255,255,255,0.45) !important;
+details[data-testid="stExpander"],
+div[data-testid="stExpander"] > details {{
+    background: rgba(255,255,255,0.50) !important;
     border: 1px solid rgba(0,0,0,0.08) !important;
     border-radius: 10px !important;
     overflow: hidden;
 }}
-[data-testid="stExpanderDetails"] {{
-    background: rgba(255,255,255,0.30) !important;
+details[data-testid="stExpander"] > summary,
+div[data-testid="stExpander"] > details > summary {{
+    background: rgba(255,255,255,0.50) !important;
+    color: {txt} !important;
+    font-family: 'Outfit', sans-serif !important;
+    padding: 10px 14px !important;
 }}
-details[data-testid="stExpander"] summary,
+details[data-testid="stExpander"] > summary:hover,
+div[data-testid="stExpander"] > details > summary:hover {{
+    background: rgba(0,0,0,0.04) !important;
+}}
+[data-testid="stExpanderDetails"] {{
+    background: rgba(255,255,255,0.35) !important;
+    padding: 8px 14px !important;
+}}
 details[data-testid="stExpander"] summary p,
 details[data-testid="stExpander"] summary span {{
     color: {txt} !important;
-    font-family: 'Outfit', sans-serif !important;
 }}
 
 /* Logo */
@@ -813,24 +824,35 @@ def _fetch_spotify_artist_stats(client) -> pd.DataFrame:
 def _fetch_mb_songwriter_stats(tracks: list) -> pd.DataFrame:
     """
     Look up songwriter credits via MusicBrainz for all given tracks.
-    Aggregates across every track so the result shows the most frequently
-    credited songwriters overall (not just for a few tracks).
-    Returns DataFrame: writer, role, count (songs credited on), songs.
+    Merges roles for the same person (e.g. Composer + Lyricist → one row).
+    Returns DataFrame: writer, role, count (distinct songs credited on), songs.
     """
     from musicbrainz import lookup_writers_bulk
     credits = lookup_writers_bulk(tracks, limit=len(tracks))
     if not credits:
         return pd.DataFrame()
-    writer_songs: dict = {}  # (name, role) -> [titles]
+
+    # name -> {roles: set, songs: set}
+    writer_data: dict = {}
     for title, writers in credits.items():
         for w in writers:
-            key = (w["name"], w["role"])
-            writer_songs.setdefault(key, [])
-            if title not in writer_songs[key]:
-                writer_songs[key].append(title)
+            name = w["name"]
+            role = w["role"]
+            if name not in writer_data:
+                writer_data[name] = {"roles": set(), "songs": set()}
+            writer_data[name]["roles"].add(role)
+            writer_data[name]["songs"].add(title)
+
     rows = sorted(
-        [{"writer": k[0], "role": k[1], "count": len(v), "songs": v}
-         for k, v in writer_songs.items()],
+        [
+            {
+                "writer": name,
+                "role": ", ".join(sorted(d["roles"])),
+                "count": len(d["songs"]),
+                "songs": sorted(d["songs"]),
+            }
+            for name, d in writer_data.items()
+        ],
         key=lambda x: -x["count"],
     )
     return pd.DataFrame(rows) if rows else pd.DataFrame()
