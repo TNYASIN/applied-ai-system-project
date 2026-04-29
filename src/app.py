@@ -922,7 +922,13 @@ def _page_writers(recommender, data_manager):
             st.info("No songwriter credits found in MusicBrainz for your top tracks.")
             _writer_credits_from_catalog(recommender)
         else:
-            st.caption(f"Top 5 most credited songwriters across your top {n_tracks} Spotify tracks (via MusicBrainz)")
+            col_cap, col_btn = st.columns([5, 1])
+            with col_cap:
+                st.caption(f"Top 5 songwriters by distinct song count across your top {n_tracks} Spotify tracks (via MusicBrainz)")
+            with col_btn:
+                if st.button("↺ Refresh", type="secondary"):
+                    st.session_state.spotify_writer_stats = None
+                    st.rerun()
             top5 = mb_df.head(5)
             for _, row in top5.iterrows():
                 role_label = f" · {row['role']}" if row.get("role") else ""
