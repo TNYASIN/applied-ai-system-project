@@ -71,6 +71,12 @@ The system has no persistent user profile. Each session starts fresh; preference
 
 ---
 
+## Portfolio Reflection: What This Project Says About Me as an AI Engineer
+
+Muze shows that I can take an AI prototype from a class exercise and evolve it into something real — with live API integrations, a production deployment, and reliability testing. More than the features, it reflects how I think: when the Spotify credits endpoint returned 403, I didn't keep guessing at headers; I diagnosed the root cause (first-party-only API), found the right alternative (MusicBrainz), and shipped a working solution the same day. That pattern — understand the constraint, find the right tool, build incrementally — is how I approach engineering problems generally. I care about systems that are honest about what they don't know (confidence scoring, graceful fallbacks) as much as systems that work when everything goes right.
+
+---
+
 ## Reflection: What This Project Taught Me
 
 Building Muze taught me that **the hardest part of an applied AI system is the data plumbing**, not the model. The scoring algorithm from Module 3 took an hour to port. The OAuth flow, session state management, CSS injection, API rate limits, and deprecated endpoints consumed most of the project time.

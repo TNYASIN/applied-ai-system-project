@@ -192,6 +192,23 @@ python test_harness.py          # prints report + saves test_report.json
 
 ---
 
+## Deployment
+
+The app is live on Streamlit Community Cloud:
+
+**[https://muze-project.streamlit.app](https://muze-project.streamlit.app)**
+
+Hosting is free via [share.streamlit.io](https://share.streamlit.io). The app auto-deploys on every push to `main`. Spotify credentials are stored as encrypted Streamlit secrets (never in source code).
+
+| | |
+|---|---|
+| Platform | Streamlit Community Cloud |
+| Repo | [github.com/TNYASIN/applied-ai-system-project](https://github.com/TNYASIN/applied-ai-system-project) |
+| Branch | `main` |
+| Entry point | `src/app.py` |
+
+---
+
 ## AI Features
 
 ### RAG (Retrieval-Augmented Generation) — Required Feature
