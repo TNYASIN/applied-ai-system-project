@@ -35,22 +35,23 @@ Muze extends that prototype into a full applied AI system: real Spotify listenin
 User (Browser)
       │
       ▼
-┌─────────────────────────────────────────────────┐
-│              Muze (Streamlit UI)                │
-│  Home │ Your Music │ Connect │ Recs │ Writers   │
-└──┬────────┬──────────────┬──────────────┬───────┘
-   │        │              │              │
-   ▼        ▼              ▼              ▼
-Spotify  Data Manager  Recommender   RAG Engine
-Client   (songs.csv)   (Scorer)      (ChromaDB /
-(OAuth)                              fallback)
-   │        │              │              │
-   │        └──────────────┘              │
-   │               │                     │
-   ▼               ▼                     ▼
-Spotify API    Writer Index         Song Context
-Top Tracks     (writer→songs)       Retrieval
-Artist Genres  Confidence Score
+┌──────────────────────────────────────────────────────────────┐
+│                     Muze (Streamlit UI)                      │
+│  Home │ Your Music │ Connect Spotify │ Recommendations │     │
+│       Writer Credits │ Analytics                            │
+└──┬──────────┬──────────────┬───────────────┬────────────────┘
+   │          │              │               │
+   ▼          ▼              ▼               ▼
+Spotify   Data Manager  Recommender      RAG Engine
+Client    (songs.csv)   (Scorer)         (ChromaDB /
+(OAuth)                                  fallback)
+   │          │              │               │
+   │          └──────────────┘               │
+   │                 │                       │
+   ▼                 ▼                       ▼
+Spotify API      Writer Index          Song Context
+Top Tracks       (writer→songs)        Retrieval
+Artist Genres    Confidence Score
    │
    ▼
 MusicBrainz API
@@ -101,13 +102,14 @@ The recommender extends the Module 3 weighted scorer with three new signals:
 
 **Output (top 3):**
 ```
-1. Keep the Rain — Searows  ·  Folk        Score: 4.3
+1. Keep the Rain — Searows  ·  Folk        Score: 4.5
    ✍️ Written by: Sufjan Stevens
 
-2. These Days — Nico  ·  Folk             Score: 4.1
+2. These Days — Nico  ·  Folk             Score: 3.4
    ✍️ Written by: Jackson Browne
 
-3. Spacewalk Thoughts — Orbit Bloom  ·  Ambient   Score: 3.8
+3. Come Here — Kate Bloom  ·  Folk        Score: 3.4
+   ✍️ Written by: Daniel Lanois
 ```
 
 ### 2 — RAG Song Insight
@@ -118,8 +120,8 @@ The recommender extends the Module 3 weighted scorer with three new signals:
 ```
 Song: Keep the Rain
 Artist: Searows
-Genre: Folk
-Mood: Chill
+Genre: folk
+Mood: chill
 Writer: Sufjan Stevens
 
 This is a chill folk track by Searows, written by Sufjan Stevens.
@@ -142,7 +144,7 @@ cd src && python test_harness.py
 ✅ PASS  Error Handling      — Handled 4/4 error cases gracefully
 ✅ PASS  Parameter Sensitivity — Different parameters produce different results
 ✅ PASS  Rag Functionality   — 1 document, context retrieved
-✅ PASS  Writer Tracking     — Found 15 writers with statistics
+✅ PASS  Writer Tracking     — Found 17 writers with statistics
 
 Total: 6/6   Pass rate: 100.0%
 ```
@@ -233,6 +235,7 @@ The recommender calculates a per-song confidence score (0–1) based on data com
 - **MusicBrainz behind a button** — the 3-call-per-track lookup takes ~3 sec/track; running it on page load would time out, so it's triggered on demand with a time estimate shown
 - **RAG populated eagerly** — catalog songs indexed at startup; Spotify-injected tracks indexed on injection, so Song Insights works for both catalog and personal library songs
 - **Fallback RAG** — in-memory dict store used when ChromaDB is unavailable, maintaining feature parity
+- **Spotify API caching** — top tracks and recently played are cached in `st.session_state` so navigating between tabs doesn't re-fetch on every render; 429 rate-limit responses surface a clear "wait N seconds" message instead of a raw error
 - **Spotify Vibes** — album art colors extracted via Pillow quantization, darkened, then lightened to pastels so the background always stays readable
 
 ---
